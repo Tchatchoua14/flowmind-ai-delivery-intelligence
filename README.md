@@ -77,6 +77,12 @@ Le système couvre l'intégralité du cycle décisionnel :
 
 ---
 
+## Diagramme 1 — Vue d'ensemble de l'architecture (les 7 phases)
+
+<p align="center">
+  <img src="https://github.com/Tchatchoua14/flowmind-ai-delivery-intelligence/blob/3ab9abf6efafea49edec254e17999e5779d23135/flowmind_architecture_overview.svg" alt="n8n Logo" />
+</p>
+
 ## Architecture cognitive
 
 ```
