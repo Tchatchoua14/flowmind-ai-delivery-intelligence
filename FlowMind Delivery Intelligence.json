@@ -1,0 +1,3699 @@
+{
+  "name": "FlowMind Delivery Intelligence",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -336,
+        2080
+      ],
+      "id": "6955c503-cbf0-4d69-b577-8c688f136a3c",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "content": "Nom du projet\n\nFlowMind\n\nSlogan / Court descriptif\n\nLe copilote décisionnel qui anticipe les risques, sécurise la livraison des sprints et agit automatiquement sur les blocages.\n\nDescription complète\n\nFlowMind est un système d’orchestration décisionnelle pour les projets logiciels. Il agrège automatiquement les données de tous les outils de développement (Jira, GitHub, GitLab, Linear, Azure DevOps) pour analyser l’état réel des sprints et détecter les risques avant qu’ils ne deviennent critiques. Grâce à ses agents spécialisés, il :\n\nAnticipe les retards et les blocages (Guardian of Deadlines).\nIdentifie les points de friction dans les validations et PR/MR (Friction Killer).\nDétecte les manques de compétence ou documentation critiques (Knowledge Gap Detector).\nPropose des actions concrètes et autonomes : assignation automatique, ping des reviewers, commentaire sur PR, création de réunions War Room.\nProduit une synthèse décisionnelle claire avec priorités et recommandations d’action (Decision Synthesizer).\n\nFlowMind permet aux équipes de prendre des décisions rapides, de déprioriser les tâches non critiques, de sécuriser la livraison même en cas d’absences ou de dépendances complexes, et d’avoir un audit complet de toutes les actions prises.\n\nPlus-value client\nVisibilité immédiate sur la santé du sprint et les risques critiques.\nRéduction du temps de décision et d’intervention manuelle.\nActions automatiques pour corriger les blocages en temps réel.\nGestion proactive des risques pour sécuriser les délais et la qualité.\nAudit et traçabilité complète des décisions et actions pour chaque sprint et PR/MR.",
+        "height": 672,
+        "width": 848,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1536,
+        -672
+      ],
+      "typeVersion": 1,
+      "id": "ae5be4c7-b63f-4e1a-b1b4-9e17f9dd6d0b",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction get(obj, path, fallback = \"\") {\n  try {\n    return path.split(\".\").reduce((acc, part) => acc?.[part], obj) ?? fallback;\n  } catch (e) {\n    return fallback;\n  }\n}\n\nfunction clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction normalizePriority(priority) {\n  const value = clean(priority).toLowerCase();\n\n  if ([\"highest\", \"critical\", \"critique\", \"blocker\", \"bloquante\"].some(v => value.includes(v))) {\n    return \"Critique\";\n  }\n\n  if ([\"high\", \"haute\", \"major\", \"majeure\"].some(v => value.includes(v))) {\n    return \"Haute\";\n  }\n\n  if ([\"medium\", \"moyenne\", \"normal\"].some(v => value.includes(v))) {\n    return \"Moyenne\";\n  }\n\n  if ([\"low\", \"basse\", \"mineure\"].some(v => value.includes(v))) {\n    return \"Basse\";\n  }\n\n  return priority || \"Non définie\";\n}\n\nfunction detectBlocked(fields) {\n  const status = clean(get(fields, \"status.name\")).toLowerCase();\n  const labels = Array.isArray(fields.labels) ? fields.labels.join(\" \").toLowerCase() : \"\";\n  const summary = clean(fields.summary).toLowerCase();\n\n  const blockerText = [\n    status,\n    labels,\n    summary\n  ].join(\" \");\n\n  return (\n    blockerText.includes(\"bloqu\") ||\n    blockerText.includes(\"blocked\") ||\n    blockerText.includes(\"blocker\") ||\n    blockerText.includes(\"en attente\") ||\n    blockerText.includes(\"waiting\")\n  );\n}\n\nfunction detectBlockerType(fields) {\n  const labels = Array.isArray(fields.labels) ? fields.labels.join(\" \").toLowerCase() : \"\";\n  const summary = clean(fields.summary).toLowerCase();\n  const status = clean(get(fields, \"status.name\")).toLowerCase();\n\n  const text = `${labels} ${summary} ${status}`;\n\n  if (text.includes(\"review\") || text.includes(\"validation\") || text.includes(\"pr\")) {\n    return \"Validation\";\n  }\n\n  if (text.includes(\"api\") || text.includes(\"bug\") || text.includes(\"tech\") || text.includes(\"dev\")) {\n    return \"Technique\";\n  }\n\n  if (text.includes(\"client\") || text.includes(\"métier\") || text.includes(\"fonctionnel\")) {\n    return \"Fonctionnel\";\n  }\n\n  if (text.includes(\"dépendance\") || text.includes(\"dependency\")) {\n    return \"Dépendance\";\n  }\n\n  if (text.includes(\"disponibilité\") || text.includes(\"absence\")) {\n    return \"Disponibilité\";\n  }\n\n  return \"\";\n}\n\nfunction extractSprint(fields) {\n  // Selon Jira, le sprint peut être dans un champ customfield.\n  // Ce code essaie de trouver un champ qui contient le mot sprint.\n  for (const [key, value] of Object.entries(fields)) {\n    if (!key.toLowerCase().includes(\"sprint\") && !String(key).startsWith(\"customfield\")) {\n      continue;\n    }\n\n    if (Array.isArray(value) && value.length > 0) {\n      const lastSprint = value[value.length - 1];\n\n      if (typeof lastSprint === \"object\" && lastSprint.name) {\n        return lastSprint.name;\n      }\n\n      if (typeof lastSprint === \"string\") {\n        const match = lastSprint.match(/name=([^,\\]]+)/);\n        if (match) return match[1];\n        return lastSprint;\n      }\n    }\n\n    if (value && typeof value === \"object\" && value.name) {\n      return value.name;\n    }\n\n    if (typeof value === \"string\" && value.toLowerCase().includes(\"sprint\")) {\n      return value;\n    }\n  }\n\n  return \"\";\n}\n\nconst normalized = [];\n\nfor (const item of items) {\n  const issue = item.json;\n  const fields = issue.fields || issue;\n\n  const key = clean(issue.key || fields.key || issue.id);\n  const title = clean(fields.summary || fields.title || fields.name);\n  const status = clean(get(fields, \"status.name\", fields.status));\n  const statusCategory = clean(get(fields, \"status.statusCategory.name\"));\n  const assignee = clean(\n    get(fields, \"assignee.displayName\") ||\n    get(fields, \"assignee.name\") ||\n    get(fields, \"assignee.emailAddress\")\n  );\n\n  const reporter = clean(\n    get(fields, \"reporter.displayName\") ||\n    get(fields, \"reporter.emailAddress\")\n  );\n\n  const priority = normalizePriority(get(fields, \"priority.name\", fields.priority));\n  const createdAt = clean(fields.created);\n  const updatedAt = clean(fields.updated);\n  const dueDate = clean(fields.duedate || fields.dueDate);\n  const labels = Array.isArray(fields.labels) ? fields.labels : [];\n\n  const blocked = detectBlocked(fields);\n  const blockerType = detectBlockerType(fields);\n\n  const sprint = extractSprint(fields);\n\n  normalized.push({\n    json: {\n      source: \"jira\",\n      type: \"task\",\n\n      external_id: key,\n      task_id: key,\n      title,\n\n      status,\n      status_category: statusCategory,\n      assignee,\n      reporter,\n      priority,\n\n      sprint,\n      created_at: createdAt,\n      updated_at: updatedAt,\n      due_date: dueDate,\n\n      labels,\n      blocked,\n      blocker_type: blockerType,\n\n      review_status: \"\",\n      ci_status: \"\",\n      linked_pr: \"\",\n\n      raw_source: \"jira\",\n      source_url: key ? `https://TON-DOMAINE.atlassian.net/browse/${key}` : \"\",\n\n      normalized_at: new Date().toISOString()\n    }\n  });\n}\n\nreturn normalized;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        544
+      ],
+      "id": "d4309ab9-5ef0-48fb-975b-2be582c592ce",
+      "name": "Code - Normalize Jira Issues",
+      "notes": "Rôle : Transformer les issues Jira en format unifié task compatible avec le workflow décisionnel.\n\nContenu :\n\nExtraction des champs essentiels : key, summary, status, priority, assignee, reporter, labels, duedate, sprint.\nDétection du blocage : blocked = true si status / labels / summary contient \"bloqu\", \"blocked\", \"en attente\", etc.\nDétection du type de blocage : \"Validation\", \"Technique\", \"Fonctionnel\", \"Dépendance\", \"Disponibilité\"."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f57b1428-b92c-48dc-93fb-4eb93cfe76f3",
+              "leftValue": "={{ $json.external_id !== \"\" && $json.title !== \"\" }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1008,
+        544
+      ],
+      "id": "0e7cb401-f95f-4ed7-bd18-40f1e71e1490",
+      "name": "IF - Jira Issue Valide ?"
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getPullRequests",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "getRepositoryPullRequestsFilters": {}
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        560,
+        1468
+      ],
+      "id": "a0b16768-7310-4837-b185-403c34f4f030",
+      "name": "GitHub - Get Pull Requests",
+      "webhookId": "f59db520-7183-499e-9278-16787864d5ed",
+      "onError": "continueErrorOutput",
+      "notes": "Rôle : Récupérer toutes les PR ouvertes pour ce client (multi-tenant via token).\n\nCredentials : {{ $json.github_token }}"
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "__CUSTOM_API_CALL__"
+      },
+      "type": "n8n-nodes-base.gitlab",
+      "typeVersion": 1,
+      "position": [
+        560,
+        1996
+      ],
+      "id": "77da20eb-8e9c-4f73-b038-8967a5a390ba",
+      "name": "GitLab - Get Merge Requests",
+      "onError": "continueErrorOutput",
+      "notes": "Rôle : Récupérer toutes les MR ouvertes pour le client.\n\nCredentials : {{ $json.gitlab_token }}"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction hoursSince(dateValue) {\n  if (!dateValue) return null;\n  const date = new Date(dateValue);\n  if (isNaN(date.getTime())) return null;\n  return Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60));\n}\n\nfunction detectLinkedTask(text) {\n  const value = clean(text);\n\n  const patterns = [\n    /([A-Z]+-\\d+)/,\n    /(US[-_ ]?\\d+)/i,\n    /(TASK[-_ ]?\\d+)/i\n  ];\n\n  for (const pattern of patterns) {\n    const match = value.match(pattern);\n    if (match) return match[1].toUpperCase().replace(\" \", \"-\").replace(\"_\", \"-\");\n  }\n\n  return \"\";\n}\n\nfunction detectReviewStatus(pr) {\n  const requestedReviewers = pr.requested_reviewers || pr.requestedReviewers || [];\n  const draft = pr.draft === true;\n\n  if (draft) return \"Draft\";\n  if (Array.isArray(requestedReviewers) && requestedReviewers.length > 0) return \"Review demandée\";\n\n  return \"Aucun reviewer\";\n}\n\nfunction detectBlocked(pr, ageHours, reviewStatus) {\n  if (pr.draft === true) return false;\n  if (reviewStatus === \"Aucun reviewer\") return true;\n  if (ageHours !== null && ageHours >= 24 && reviewStatus === \"Review demandée\") return true;\n  return false;\n}\n\nconst normalized = [];\n\nfor (const item of items) {\n  const pr = item.json;\n\n  const number = clean(pr.number || pr.id);\n  const title = clean(pr.title);\n  const body = clean(pr.body);\n  const state = clean(pr.state);\n  const author = clean(pr.user?.login || pr.author?.login || pr.user);\n  const createdAt = clean(pr.created_at || pr.createdAt);\n  const updatedAt = clean(pr.updated_at || pr.updatedAt);\n  const mergedAt = clean(pr.merged_at || pr.mergedAt);\n  const htmlUrl = clean(pr.html_url || pr.url);\n\n  const reviewers = Array.isArray(pr.requested_reviewers)\n    ? pr.requested_reviewers.map(r => r.login || r.name || r).filter(Boolean)\n    : [];\n\n  const ageHours = hoursSince(createdAt);\n  const reviewStatus = detectReviewStatus(pr);\n  const linkedTask = detectLinkedTask(`${title} ${body} ${pr.head?.ref || \"\"}`);\n\n  // 🔹 Vérification merge non approuvé\n  if (mergedAt && !pr.reviews?.some(r => r.state === \"APPROVED\")) {\n    pr.blocked = true;\n    pr.blocker_type = \"Merge non approuvé\";\n  }\n\n  // Détection blocage classique\n  const blocked = pr.blocked || detectBlocked(pr, ageHours, reviewStatus);\n\n  let blockerType = \"\";\n  if (pr.blocker_type) {\n    // Priorité au merge non approuvé si présent\n    blockerType = pr.blocker_type;\n  } else if (blocked && reviewStatus === \"Aucun reviewer\") {\n    blockerType = \"Validation\";\n  } else if (blocked && reviewStatus === \"Review demandée\") {\n    blockerType = \"Review en attente\";\n  }\n\n  normalized.push({\n    json: {\n      source: \"github\",\n      type: \"pull_request\",\n\n      external_id: number ? `GH-PR-${number}` : \"\",\n      pr_id: number,\n      task_id: linkedTask,\n      linked_task: linkedTask,\n\n      title,\n      status: state,\n      author,\n      assignee: author,\n      reviewers,\n\n      created_at: createdAt,\n      updated_at: updatedAt,\n      merged_at: mergedAt,\n      age_hours: ageHours,\n\n      review_status: reviewStatus,\n      ci_status: \"\",\n\n      priority: \"\",\n      sprint: \"\",\n      due_date: \"\",\n\n      blocked,\n      blocker_type: blockerType,\n\n      raw_source: \"github\",\n      source_url: htmlUrl,\n\n      normalized_at: new Date().toISOString()\n    }\n  });\n}\n\nreturn normalized;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        1204
+      ],
+      "id": "1ba5cf63-34c1-4d12-8de0-6bceaab97958",
+      "name": "Code - Normalize GitHub Pull Requests",
+      "notes": "Rôle : Transformer les PR GitHub ouvertes en format compatible pull_request.\n\nContenu :\n\nChamps essentiels : number, title, body, state, author, created_at, updated_at, merged_at.\nDétection review : \"Draft\", \"Review demandée\", \"Aucun reviewer\".\nBlocage PR : si review manquante ou >24h en attente."
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction hoursSince(dateValue) {\n  if (!dateValue) return null;\n  const date = new Date(dateValue);\n  if (isNaN(date.getTime())) return null;\n  return Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60));\n}\n\nfunction detectLinkedTask(text) {\n  const value = clean(text);\n\n  const patterns = [\n    /([A-Z]+-\\d+)/,\n    /(US[-_ ]?\\d+)/i,\n    /(TASK[-_ ]?\\d+)/i\n  ];\n\n  for (const pattern of patterns) {\n    const match = value.match(pattern);\n    if (match) return match[1].toUpperCase().replace(\" \", \"-\").replace(\"_\", \"-\");\n  }\n\n  return \"\";\n}\n\nfunction detectReviewStatus(mr) {\n  const reviewers = mr.reviewers || [];\n  const assignees = mr.assignees || [];\n\n  if (mr.draft === true || mr.work_in_progress === true) return \"Draft\";\n  if (Array.isArray(reviewers) && reviewers.length > 0) return \"Review demandée\";\n  if (Array.isArray(assignees) && assignees.length > 0) return \"Assignée\";\n\n  return \"Aucun reviewer\";\n}\n\nfunction detectPipelineStatus(mr) {\n  if (mr.head_pipeline?.status) return mr.head_pipeline.status;\n  if (mr.pipeline?.status) return mr.pipeline.status;\n  return \"\";\n}\n\nconst normalized = [];\n\nfor (const item of items) {\n  const mr = item.json;\n\n  const iid = clean(mr.iid || mr.id);\n  const title = clean(mr.title);\n  const description = clean(mr.description);\n  const state = clean(mr.state);\n  const author = clean(mr.author?.name || mr.author?.username || mr.author);\n  const createdAt = clean(mr.created_at || mr.createdAt);\n  const updatedAt = clean(mr.updated_at || mr.updatedAt);\n  const mergedAt = clean(mr.merged_at || mr.mergedAt);\n  const webUrl = clean(mr.web_url || mr.url);\n\n  const reviewers = Array.isArray(mr.reviewers)\n    ? mr.reviewers.map(r => r.name || r.username || r).filter(Boolean)\n    : [];\n\n  const ageHours = hoursSince(createdAt);\n  const reviewStatus = detectReviewStatus(mr);\n  const ciStatus = detectPipelineStatus(mr);\n  const linkedTask = detectLinkedTask(`${title} ${description} ${mr.source_branch || \"\"}`);\n\n  let blocked = false;\n  let blockerType = \"\";\n\n  if (reviewStatus === \"Aucun reviewer\") {\n    blocked = true;\n    blockerType = \"Validation\";\n  }\n\n  if (ageHours !== null && ageHours >= 24 && reviewStatus === \"Review demandée\") {\n    blocked = true;\n    blockerType = \"Review en attente\";\n  }\n\n  if (ciStatus === \"failed\") {\n    blocked = true;\n    blockerType = \"CI/CD échouée\";\n  }\n\n  normalized.push({\n    json: {\n      source: \"gitlab\",\n      type: \"merge_request\",\n\n      external_id: iid ? `GL-MR-${iid}` : \"\",\n      mr_id: iid,\n      task_id: linkedTask,\n      linked_task: linkedTask,\n\n      title,\n      status: state,\n      author,\n      assignee: author,\n      reviewers,\n\n      created_at: createdAt,\n      updated_at: updatedAt,\n      merged_at: mergedAt,\n      age_hours: ageHours,\n\n      review_status: reviewStatus,\n      ci_status: ciStatus,\n\n      priority: \"\",\n      sprint: \"\",\n      due_date: \"\",\n\n      blocked,\n      blocker_type: blockerType,\n\n      raw_source: \"gitlab\",\n      source_url: webUrl,\n\n      normalized_at: new Date().toISOString()\n    }\n  });\n}\n\nreturn normalized;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        1732
+      ],
+      "id": "ee7caf17-6589-422f-8405-38c2fd242084",
+      "name": "Code - Normalize GitLab Merge Requests",
+      "notes": "Rôle : Transformer les MR GitLab ouvertes en format compatible merge_request.\n\nContenu :\n\nChamps : iid, title, description, state, author, reviewers, assignees, created_at, updated_at, merged_at.\nDétection review et pipeline status (CI/CD).\nBlocage : blocked = true si CI échouée ou review longue."
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction normalizePriority(priority) {\n  const value = clean(priority).toLowerCase();\n\n  if ([\"urgent\", \"critical\", \"critique\", \"1\"].includes(value)) return \"Critique\";\n  if ([\"high\", \"haute\", \"2\"].includes(value)) return \"Haute\";\n  if ([\"medium\", \"moyenne\", \"3\"].includes(value)) return \"Moyenne\";\n  if ([\"low\", \"basse\", \"4\"].includes(value)) return \"Basse\";\n\n  return priority || \"Non définie\";\n}\n\nfunction daysSince(dateValue) {\n  if (!dateValue) return null;\n  const date = new Date(dateValue);\n  if (isNaN(date.getTime())) return null;\n  return Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));\n}\n\nfunction detectBlocked(issue) {\n  const title = clean(issue.title).toLowerCase();\n  const description = clean(issue.description).toLowerCase();\n  const state = clean(issue.state?.name || issue.status || issue.state).toLowerCase();\n  const labels = Array.isArray(issue.labels?.nodes)\n    ? issue.labels.nodes.map(l => l.name).join(\" \").toLowerCase()\n    : \"\";\n\n  const text = `${title} ${description} ${state} ${labels}`;\n\n  return (\n    text.includes(\"blocked\") ||\n    text.includes(\"bloqué\") ||\n    text.includes(\"bloquee\") ||\n    text.includes(\"bloquée\") ||\n    text.includes(\"en attente\") ||\n    text.includes(\"waiting\")\n  );\n}\n\nfunction detectBlockerType(issue) {\n  const title = clean(issue.title).toLowerCase();\n  const description = clean(issue.description).toLowerCase();\n  const text = `${title} ${description}`;\n\n  if (text.includes(\"review\") || text.includes(\"validation\") || text.includes(\"pr\")) {\n    return \"Validation\";\n  }\n\n  if (text.includes(\"api\") || text.includes(\"bug\") || text.includes(\"tech\")) {\n    return \"Technique\";\n  }\n\n  if (text.includes(\"client\") || text.includes(\"fonctionnel\") || text.includes(\"métier\")) {\n    return \"Fonctionnel\";\n  }\n\n  if (text.includes(\"dependency\") || text.includes(\"dépendance\")) {\n    return \"Dépendance\";\n  }\n\n  return \"\";\n}\n\nconst normalized = [];\n\nfor (const item of items) {\n  const issue = item.json;\n\n  const id = clean(issue.identifier || issue.id || issue.number);\n  const title = clean(issue.title);\n  const description = clean(issue.description);\n\n  const status = clean(issue.state?.name || issue.status || issue.state);\n  const assignee = clean(issue.assignee?.name || issue.assignee?.displayName || issue.assignee?.email || issue.assignee);\n  const project = clean(issue.project?.name || issue.project);\n  const team = clean(issue.team?.name || issue.team);\n\n  const priorityRaw = clean(issue.priorityLabel || issue.priority);\n  const priority = normalizePriority(priorityRaw);\n\n  const createdAt = clean(issue.createdAt || issue.created_at);\n  const updatedAt = clean(issue.updatedAt || issue.updated_at);\n  const dueDate = clean(issue.dueDate || issue.due_date);\n  const cycle = clean(issue.cycle?.name || issue.cycle);\n\n  const ageDays = daysSince(createdAt);\n\n  const blocked = detectBlocked(issue);\n  const blockerType = detectBlockerType(issue);\n\n  const sourceUrl = clean(issue.url || issue.webUrl);\n\n  normalized.push({\n    json: {\n      source: \"linear\",\n      type: \"task\",\n\n      external_id: id,\n      task_id: id,\n      title,\n      description,\n\n      status,\n      status_category: status,\n      assignee,\n      reporter: \"\",\n\n      priority,\n      project,\n      team,\n      sprint: cycle,\n\n      created_at: createdAt,\n      updated_at: updatedAt,\n      due_date: dueDate,\n      age_days: ageDays,\n\n      blocked,\n      blocker_type: blockerType,\n\n      review_status: \"\",\n      ci_status: \"\",\n      linked_pr: \"\",\n\n      raw_source: \"linear\",\n      source_url: sourceUrl,\n\n      normalized_at: new Date().toISOString()\n    }\n  });\n}\n\nreturn normalized;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        2260
+      ],
+      "id": "483bf31b-0a22-4038-944b-0f74088c4c48",
+      "name": "Code - Normalize Linear Issues",
+      "notes": "Rôle : Transformer les issues Linear en format task.\n\nContenu :\n\nChamps : id, title, description, status, assignee, priority, cycle, createdAt, updatedAt.\nDétection blocage et type : validation, technique, fonctionnel, dépendance."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f57b1428-b92c-48dc-93fb-4eb93cfe76f3",
+              "leftValue": "={{ $json.external_id !== \"\" && $json.title !== \"\" }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1008,
+        1204
+      ],
+      "id": "626221e4-542f-45b1-862a-8ebd212a23b0",
+      "name": "IF - GitHub PR Valide ?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f57b1428-b92c-48dc-93fb-4eb93cfe76f3",
+              "leftValue": "={{ $json.external_id !== \"\" && $json.title !== \"\" }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1008,
+        1732
+      ],
+      "id": "5dbe9528-445e-41ee-ac66-1d852cb32f00",
+      "name": "IF - GitLab MR Valide ?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f57b1428-b92c-48dc-93fb-4eb93cfe76f3",
+              "leftValue": "={{ $json.external_id !== \"\" && $json.title !== \"\" }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1008,
+        2260
+      ],
+      "id": "e768aace-cd94-49d1-b51b-71df9d2ddd77",
+      "name": "IF - Linear Issue Valide ?"
+    },
+    {
+      "parameters": {
+        "numberInputs": 5
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1232,
+        580
+      ],
+      "id": "a2c600c2-a4d3-4510-987f-44ec54ee9eae",
+      "name": "Merge - Unified Delivery Data",
+      "notes": "Merge toutes les sources normalisées (Jira, GitHub, GitLab, Linear, Azure) en un dataset unique pour le scoring."
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction extractTaskIdFromText(text) {\n  const value = clean(text);\n\n  const patterns = [\n    /([A-Z]+-\\d+)/,\n    /(US[-_ ]?\\d+)/i,\n    /(TASK[-_ ]?\\d+)/i\n  ];\n\n  for (const pattern of patterns) {\n    const match = value.match(pattern);\n    if (match) {\n      return match[1]\n        .toUpperCase()\n        .replace(\" \", \"-\")\n        .replace(\"_\", \"-\");\n    }\n  }\n\n  return \"\";\n}\n\nconst allData = items.map(item => item.json);\n\nconst tasks = allData.filter(item => item.type === \"task\");\nconst pullRequests = allData.filter(item =>\n  item.type === \"pull_request\" || item.type === \"merge_request\"\n);\n\nconst prsByTaskId = {};\n\nfor (const pr of pullRequests) {\n  let linkedTask = clean(pr.task_id || pr.linked_task || pr.linked_pr);\n\n  if (!linkedTask) {\n    linkedTask = extractTaskIdFromText(`${pr.title || \"\"} ${pr.description || \"\"} ${pr.source_branch || \"\"}`);\n  }\n\n  if (!linkedTask) continue;\n\n  if (!prsByTaskId[linkedTask]) {\n    prsByTaskId[linkedTask] = [];\n  }\n\n  prsByTaskId[linkedTask].push(pr);\n}\n\nconst output = [];\n\nfor (const task of tasks) {\n  const taskId = clean(task.task_id || task.external_id);\n  const linkedPrs = prsByTaskId[taskId] || [];\n\n  const hasLinkedPr = linkedPrs.length > 0;\n\n  const blockedPrs = linkedPrs.filter(pr => pr.blocked === true);\n  const waitingReviews = linkedPrs.filter(pr =>\n    clean(pr.review_status).toLowerCase().includes(\"review\") ||\n    clean(pr.review_status).toLowerCase().includes(\"aucun reviewer\")\n  );\n\n  const failedCi = linkedPrs.filter(pr =>\n    clean(pr.ci_status).toLowerCase() === \"failed\" ||\n    clean(pr.ci_status).toLowerCase() === \"failure\"\n  );\n\n  output.push({\n    json: {\n      ...task,\n\n      linked_pr_count: linkedPrs.length,\n      linked_prs: linkedPrs.map(pr => ({\n        source: pr.source,\n        external_id: pr.external_id,\n        title: pr.title,\n        status: pr.status,\n        author: pr.author,\n        reviewers: pr.reviewers,\n        review_status: pr.review_status,\n        ci_status: pr.ci_status,\n        age_hours: pr.age_hours,\n        blocked: pr.blocked,\n        blocker_type: pr.blocker_type,\n        source_url: pr.source_url\n      })),\n\n      has_linked_pr: hasLinkedPr,\n      has_blocked_pr: blockedPrs.length > 0,\n      has_waiting_review: waitingReviews.length > 0,\n      has_failed_ci: failedCi.length > 0,\n\n      pr_blocker_summary: blockedPrs\n        .map(pr => `${pr.external_id} - ${pr.blocker_type || \"Blocage PR\"}`)\n        .join(\" | \"),\n\n      delivery_context_enriched: true,\n      linked_at: new Date().toISOString()\n    }\n  });\n}\n\n// On garde aussi les PR/MR non liées pour ne pas perdre les signaux faibles\nfor (const pr of pullRequests) {\n  const linkedTask = clean(pr.task_id || pr.linked_task);\n\n  if (!linkedTask) {\n    output.push({\n      json: {\n        ...pr,\n        orphan_pr: true,\n        delivery_context_enriched: true,\n        linked_at: new Date().toISOString()\n      }\n    });\n  }\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1456,
+        628
+      ],
+      "id": "d679803d-14d1-4a4f-9af7-f584415e8b18",
+      "name": "Code - Link Tasks With PRs",
+      "notesInFlow": true,
+      "notes": "Rôle : relier les task aux PR / MR correspondantes.\nChamps ajoutés : linked_prs, linked_pr_count, has_blocked_pr, has_waiting_review, has_failed_ci."
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst today = new Date();\n\nfunction clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction parseDate(value) {\n  if (!value) return null;\n  const date = new Date(value);\n  return isNaN(date.getTime()) ? null : date;\n}\n\nfunction daysBetween(date1, date2) {\n  if (!date1 || !date2) return null;\n  return Math.floor((date2 - date1) / (1000 * 60 * 60 * 24));\n}\n\nfunction isDone(status) {\n  const value = clean(status).toLowerCase();\n\n  return (\n    value.includes(\"done\") ||\n    value.includes(\"termin\") ||\n    value.includes(\"closed\") ||\n    value.includes(\"resolved\") ||\n    value.includes(\"livré\") ||\n    value.includes(\"livree\") ||\n    value.includes(\"livrée\")\n  );\n}\n\nfunction priorityScore(priority) {\n  const value = clean(priority).toLowerCase();\n\n  if (value.includes(\"critique\") || value.includes(\"critical\") || value.includes(\"highest\")) return 20;\n  if (value.includes(\"haute\") || value.includes(\"high\")) return 15;\n  if (value.includes(\"moyenne\") || value.includes(\"medium\")) return 8;\n  if (value.includes(\"basse\") || value.includes(\"low\")) return 3;\n\n  return 5;\n}\n\nfunction getRiskLevel(score) {\n  if (score >= 80) return \"Critique\";\n  if (score >= 55) return \"Élevé\";\n  if (score >= 30) return \"Moyen\";\n  return \"Faible\";\n}\n\nfunction buildDecision(riskLevel, reasons, item) {\n  const assignee = clean(item.assignee) || \"responsable non identifié\";\n\n  if (riskLevel === \"Critique\") {\n    return `Décision immédiate requise : arbitrer aujourd’hui, contacter ${assignee}, activer un backup si nécessaire et fixer une heure limite de résolution.`;\n  }\n\n  if (riskLevel === \"Élevé\") {\n    return `Action rapide sous 24h : demander un point de blocage à ${assignee}, confirmer la cause et définir une action de déblocage.`;\n  }\n\n  if (riskLevel === \"Moyen\") {\n    return `Surveillance renforcée : suivre l’évolution de la tâche et demander une mise à jour au prochain point projet.`;\n  }\n\n  return \"Suivi normal.\";\n}\n\nfunction detectMainRiskType(reasons) {\n  const text = reasons.join(\" \").toLowerCase();\n\n  if (text.includes(\"review\") || text.includes(\"validation\")) return \"Validation\";\n  if (text.includes(\"ci/cd\")) return \"Technique\";\n  if (text.includes(\"retard\") || text.includes(\"deadline\")) return \"Planning\";\n  if (text.includes(\"responsable\")) return \"Organisation\";\n  if (text.includes(\"pr\")) return \"Delivery technique\";\n  if (text.includes(\"bloqué\") || text.includes(\"bloquee\")) return \"Blocage\";\n\n  return \"Risque delivery\";\n}\n\nconst risks = [];\n\nfor (const item of items) {\n  const data = item.json;\n\n  const type = clean(data.type);\n  const status = clean(data.status);\n  const title = clean(data.title);\n  const externalId = clean(data.external_id || data.task_id || data.pr_id || data.mr_id);\n\n  let score = 0;\n  const reasons = [];\n\n  const createdAt = parseDate(data.created_at);\n  const updatedAt = parseDate(data.updated_at);\n  const dueDate = parseDate(data.due_date);\n\n  const ageDays = createdAt ? daysBetween(createdAt, today) : null;\n  const inactiveDays = updatedAt ? daysBetween(updatedAt, today) : null;\n\n  if (data.blocked === true) {\n    score += 30;\n    reasons.push(\"Élément marqué comme bloqué\");\n  }\n\n  if (data.has_blocked_pr === true) {\n    score += 25;\n    reasons.push(\"PR/MR liée bloquée\");\n  }\n\n  if (data.has_waiting_review === true) {\n    score += 20;\n    reasons.push(\"Review ou validation en attente\");\n  }\n\n  if (data.has_failed_ci === true) {\n    score += 25;\n    reasons.push(\"CI/CD échouée sur une PR/MR liée\");\n  }\n\n  if (dueDate && dueDate < today && !isDone(status)) {\n    score += 25;\n    reasons.push(\"Deadline dépassée\");\n  }\n\n  if (inactiveDays !== null && inactiveDays >= 3 && !isDone(status)) {\n    score += 10;\n    reasons.push(`Aucune mise à jour depuis ${inactiveDays} jours`);\n  }\n\n  if (ageDays !== null && ageDays >= 5 && !isDone(status)) {\n    score += 10;\n    reasons.push(`Tâche ouverte depuis ${ageDays} jours`);\n  }\n\n  if (!clean(data.assignee)) {\n    score += 15;\n    reasons.push(\"Aucun responsable assigné\");\n  }\n\n  if (type === \"task\" && clean(data.priority)) {\n    const pScore = priorityScore(data.priority);\n    score += pScore;\n\n    if (pScore >= 15) {\n      reasons.push(\"Priorité élevée\");\n    }\n  }\n\n  if (type === \"pull_request\" || type === \"merge_request\") {\n    if (data.age_hours !== null && data.age_hours >= 24 && !isDone(status)) {\n      score += 20;\n      reasons.push(`PR/MR ouverte depuis ${data.age_hours} heures`);\n    }\n\n    if (clean(data.review_status).toLowerCase().includes(\"aucun reviewer\")) {\n      score += 20;\n      reasons.push(\"Aucun reviewer assigné\");\n    }\n\n    if (clean(data.ci_status).toLowerCase() === \"failed\") {\n      score += 25;\n      reasons.push(\"CI/CD échouée\");\n    }\n  }\n\n  if (score < 30) {\n    continue;\n  }\n\n  const riskLevel = getRiskLevel(score);\n  const riskType = detectMainRiskType(reasons);\n  const decision = buildDecision(riskLevel, reasons, data);\n\n  const alertKeyParts = [\n    data.source || \"unknown\",\n    externalId || title,\n    riskType,\n    riskLevel\n  ];\n\n  const alertKey = alertKeyParts\n    .join(\"-\")\n    .replace(/\\s+/g, \"_\")\n    .toLowerCase();\n\n  risks.push({\n    json: {\n      alert_key: alertKey,\n\n      source: data.source,\n      type: data.type,\n      external_id: externalId,\n      task_id: data.task_id || data.linked_task || \"\",\n      title,\n\n      status,\n      assignee: data.assignee || data.author || \"\",\n      priority: data.priority || \"\",\n      sprint: data.sprint || \"\",\n\n      risk_score: score,\n      risk_level: riskLevel,\n      risk_type: riskType,\n\n      reasons_detected: reasons.join(\" | \"),\n      decision_required: decision,\n\n      blocker_type: data.blocker_type || riskType,\n      pr_blocker_summary: data.pr_blocker_summary || \"\",\n\n      linked_pr_count: data.linked_pr_count || 0,\n      linked_prs: data.linked_prs || [],\n\n      source_url: data.source_url || \"\",\n      detected_at: today.toISOString(),\n      status_alert: \"Ouverte\",\n\n      raw_context: data\n    }\n  });\n}\n\nreturn risks;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        628
+      ],
+      "id": "f7a0126e-1971-44df-9f7c-9f5dae824686",
+      "name": "Code - Detect Delivery Risks",
+      "notesInFlow": true,
+      "notes": "Analyse chaque task ou PR/MR pour calculer :\n\nScore de risque\nType de risque (Validation, Technique, Planning, Organisation)\nReasons détectées\nActions recommandées par logique métier simple"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst risks = items.map(item => item.json);\n\nif (risks.length === 0) {\n  return [\n    {\n      json: {\n        no_risk_detected: true,\n        sprint_health_score: 100,\n        global_risk_level: \"Faible\",\n        total_risks: 0,\n        critical_risks: 0,\n        high_risks: 0,\n        medium_risks: 0,\n        total_risk_score: 0,\n        top_risk_types: \"\",\n        top_assignees: \"\",\n        top_sources: \"\",\n        urgent_decisions: [],\n        executive_summary: \"Aucun risque significatif détecté. Le sprint peut rester en suivi standard.\",\n        analyzed_at: new Date().toISOString()\n      }\n    }\n  ];\n}\n\nfunction clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction countBy(array, field) {\n  const result = {};\n\n  for (const item of array) {\n    const key = clean(item[field]) || \"Non qualifié\";\n    result[key] = (result[key] || 0) + 1;\n  }\n\n  return result;\n}\n\nfunction sortEntriesDesc(obj) {\n  return Object.entries(obj).sort((a, b) => b[1] - a[1]);\n}\n\nconst totalRisks = risks.length;\n\nconst criticalRisks = risks.filter(r => r.risk_level === \"Critique\");\nconst highRisks = risks.filter(r => r.risk_level === \"Élevé\");\nconst mediumRisks = risks.filter(r => r.risk_level === \"Moyen\");\n\nlet sprintHealthScore = 100;\n\nsprintHealthScore -= criticalRisks.length * 18;\nsprintHealthScore -= highRisks.length * 10;\nsprintHealthScore -= mediumRisks.length * 5;\n\nconst totalRiskScore = risks.reduce((sum, r) => sum + Number(r.risk_score || 0), 0);\n\nif (totalRiskScore >= 300) {\n  sprintHealthScore -= 20;\n} else if (totalRiskScore >= 200) {\n  sprintHealthScore -= 12;\n} else if (totalRiskScore >= 100) {\n  sprintHealthScore -= 6;\n}\n\nif (sprintHealthScore < 0) sprintHealthScore = 0;\n\nlet globalRiskLevel = \"Faible\";\n\nif (sprintHealthScore < 40) {\n  globalRiskLevel = \"Critique\";\n} else if (sprintHealthScore < 60) {\n  globalRiskLevel = \"Élevé\";\n} else if (sprintHealthScore < 80) {\n  globalRiskLevel = \"Moyen\";\n}\n\nconst risksByType = countBy(risks, \"risk_type\");\nconst risksByAssignee = countBy(risks, \"assignee\");\nconst risksBySource = countBy(risks, \"source\");\n\nconst topRiskTypes = sortEntriesDesc(risksByType)\n  .slice(0, 5)\n  .map(([type, count]) => `${type}: ${count}`)\n  .join(\" | \");\n\nconst topAssignees = sortEntriesDesc(risksByAssignee)\n  .slice(0, 5)\n  .map(([person, count]) => `${person}: ${count}`)\n  .join(\" | \");\n\nconst topSources = sortEntriesDesc(risksBySource)\n  .slice(0, 5)\n  .map(([source, count]) => `${source}: ${count}`)\n  .join(\" | \");\n\nconst urgentDecisions = risks\n  .filter(r => r.risk_level === \"Critique\" || r.risk_level === \"Élevé\")\n  .sort((a, b) => Number(b.risk_score || 0) - Number(a.risk_score || 0))\n  .slice(0, 5)\n  .map(r => ({\n    external_id: r.external_id,\n    title: r.title,\n    assignee: r.assignee,\n    risk_level: r.risk_level,\n    risk_score: r.risk_score,\n    decision_required: r.decision_required,\n    source_url: r.source_url\n  }));\n\nlet executiveSummary = \"\";\n\nif (totalRisks === 0) {\n  executiveSummary = \"Aucun risque significatif détecté sur le sprint. Le suivi peut rester standard.\";\n} else if (globalRiskLevel === \"Critique\") {\n  executiveSummary = `Le sprint est en zone critique avec ${totalRisks} risque(s) détecté(s), dont ${criticalRisks.length} critique(s). Une décision d’arbitrage est nécessaire aujourd’hui.`;\n} else if (globalRiskLevel === \"Élevé\") {\n  executiveSummary = `Le sprint présente un niveau de risque élevé avec ${totalRisks} risque(s) détecté(s). Les blocages principaux doivent être traités sous 24h.`;\n} else if (globalRiskLevel === \"Moyen\") {\n  executiveSummary = `Le sprint reste maîtrisable mais nécessite une surveillance renforcée. ${totalRisks} risque(s) doivent être suivis.`;\n} else {\n  executiveSummary = `Le sprint est globalement sain malgré ${totalRisks} risque(s) mineur(s) détecté(s).`;\n}\n\nconst sprintSummary = {\n  sprint_health_score: sprintHealthScore,\n  global_risk_level: globalRiskLevel,\n\n  total_risks: totalRisks,\n  critical_risks: criticalRisks.length,\n  high_risks: highRisks.length,\n  medium_risks: mediumRisks.length,\n\n  total_risk_score: totalRiskScore,\n\n  top_risk_types: topRiskTypes,\n  top_assignees: topAssignees,\n  top_sources: topSources,\n\n  urgent_decisions: urgentDecisions,\n  executive_summary: executiveSummary,\n\n  analyzed_at: new Date().toISOString()\n};\n\nreturn risks.map(risk => {\n  return {\n    json: {\n      ...risk,\n      sprint_health_score: sprintSummary.sprint_health_score,\n      global_risk_level: sprintSummary.global_risk_level,\n\n      total_risks: sprintSummary.total_risks,\n      critical_risks: sprintSummary.critical_risks,\n      high_risks: sprintSummary.high_risks,\n      medium_risks: sprintSummary.medium_risks,\n\n      total_risk_score: sprintSummary.total_risk_score,\n\n      top_risk_types: sprintSummary.top_risk_types,\n      top_assignees: sprintSummary.top_assignees,\n      top_sources: sprintSummary.top_sources,\n\n      urgent_decisions: sprintSummary.urgent_decisions,\n      executive_summary: sprintSummary.executive_summary,\n\n      analyzed_at: sprintSummary.analyzed_at\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        1352
+      ],
+      "id": "fb8320d0-9db6-473f-9d7c-dc8fcc5aa782",
+      "name": "Code - Sprint Health Score",
+      "notes": "Agrège les risques par sprint pour produire :\n\nsprint_health_score\nglobal_risk_level\nTop risques et causes\nDécisions urgentes\nExecutive summary"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"job_id\": \"{{ $json.job_id || null }}\",\n  \"level\": \"error\",\n  \"source\": \"{{ $json.source || 'jira' }}\",\n  \"error_type\": \"VALIDATION_ERROR\",\n  \"error_message\": \"Issue Jira invalide : external_id ou title manquant\",\n  \"external_id\": \"{{ $json.external_id || '' }}\",\n  \"title\": \"{{ $json.title || '' }}\",\n  \"validation_errors\": \"external_id manquant ou title manquant\",\n  \"raw_item\": \"{{ JSON.stringify($json) }}\",\n  \"status\": \"failed\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1232,
+        388
+      ],
+      "id": "10ddb088-4997-4617-923d-6552e4bb46fd",
+      "name": "Set - Jira Validation Error"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (\n  job_id,\n  level,\n  source,\n  error_type,\n  message,\n  details,\n  created_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, NOW());",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.job_id || null,\n  $json.level || \"error\",\n  $json.source || \"jira\",\n  $json.error_type || \"VALIDATION_ERROR\",\n  $json.error_message || \"Erreur de validation Jira\",\n  JSON.stringify({\n    external_id: $json.external_id,\n    title: $json.title,\n    validation_errors: $json.validation_errors,\n    raw_item: $json.raw_item,\n    status: $json.status\n  })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1456,
+        388
+      ],
+      "id": "64baa623-a9c9-4bd7-8119-6538c603053a",
+      "name": "Postgres - Insert Jira Audit Log",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "options": {
+          "jql": "=project = \"PROJET\" AND sprint in openSprints() AND statusCategory != Done ORDER BY priority DESC, updated DESC"
+        }
+      },
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [
+        560,
+        940
+      ],
+      "id": "ade15bb5-0732-4c98-b5de-7f2f4b2534f0",
+      "name": "Jira - Get Sprint Issues",
+      "retryOnFail": false,
+      "onError": "continueErrorOutput",
+      "notes": "Rôle : Récupérer toutes les issues ouvertes du sprint pour ce client.\n\nCredentials : {{ $json.jira_token }} dynamique depuis Set - Client Context"
+    },
+    {
+      "parameters": {
+        "operation": "getAll"
+      },
+      "type": "n8n-nodes-base.linear",
+      "typeVersion": 1.1,
+      "position": [
+        560,
+        2524
+      ],
+      "id": "119b3094-eb88-43e8-a00f-daf2242cc72a",
+      "name": "Linear - Get Issues",
+      "onError": "continueErrorOutput",
+      "notes": "Rôle : Récupérer toutes les issues ouvertes du sprint.\n\nproject = \"PROJET\" \nAND sprint in openSprints() \nAND statusCategory != Done \nORDER BY priority DESC, updated DESC"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"job_id\": \"{{ $json.job_id || null }}\",\n  \"level\": \"error\",\n  \"source\": \"{{ $json.source || 'github' }}\",\n  \"error_type\": \"VALIDATION_ERROR\",\n  \"error_message\": \"Pull Request GitHub invalide : external_id ou title manquant\",\n  \"external_id\": \"{{ $json.external_id || '' }}\",\n  \"title\": \"{{ $json.title || '' }}\",\n  \"validation_errors\": \"external_id manquant ou title manquant\",\n  \"raw_item\": \"{{ JSON.stringify($json) }}\",\n  \"status\": \"failed\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1232,
+        1204
+      ],
+      "id": "060f0383-5ddd-498f-bec2-c15ce3dcb0ab",
+      "name": "Set - GitHub PR Validation Error"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (\n  job_id,\n  level,\n  source,\n  error_type,\n  message,\n  details,\n  created_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, NOW());",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.job_id || null,\n  $json.level || \"error\",\n  $json.source || \"github\",\n  $json.error_type || \"VALIDATION_ERROR\",\n  $json.error_message || \"Erreur de validation GitHub\",\n  JSON.stringify({\n    external_id: $json.external_id,\n    title: $json.title,\n    validation_errors: $json.validation_errors,\n    raw_item: $json.raw_item,\n    status: $json.status\n  })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1456,
+        1204
+      ],
+      "id": "9b50ddd6-51c0-4b9a-8a33-3f5b4a3e793f",
+      "name": "Postgres - Insert GitHub Audit Log",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"job_id\": \"{{ $json.job_id || null }}\",\n  \"level\": \"error\",\n  \"source\": \"{{ $json.source || 'gitlab' }}\",\n  \"error_type\": \"VALIDATION_ERROR\",\n  \"error_message\": \"Merge Request GitLab invalide : external_id ou title manquant\",\n  \"external_id\": \"{{ $json.external_id || '' }}\",\n  \"title\": \"{{ $json.title || '' }}\",\n  \"validation_errors\": \"external_id manquant ou title manquant\",\n  \"raw_item\": \"{{ JSON.stringify($json) }}\",\n  \"status\": \"failed\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1232,
+        1732
+      ],
+      "id": "faf86901-9184-43df-be24-3599488e3944",
+      "name": "Set - GitLab MR Validation Error"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (\n  job_id,\n  level,\n  source,\n  error_type,\n  message,\n  details,\n  created_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, NOW());",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.job_id || null,\n  $json.level || \"error\",\n  $json.source || \"gitlab\",\n  $json.error_type || \"VALIDATION_ERROR\",\n  $json.error_message || \"Erreur de validation GitLab\",\n  JSON.stringify({\n    external_id: $json.external_id,\n    title: $json.title,\n    validation_errors: $json.validation_errors,\n    raw_item: $json.raw_item,\n    status: $json.status\n  })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1456,
+        1732
+      ],
+      "id": "a2e06d5b-aa9c-460b-8b9a-d6ce5790869c",
+      "name": "Postgres - Insert GitLab Audit Log",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"job_id\": \"{{ $json.job_id || null }}\",\n  \"level\": \"error\",\n  \"source\": \"{{ $json.source || 'linear' }}\",\n  \"error_type\": \"VALIDATION_ERROR\",\n  \"error_message\": \"Issue Linear invalide : external_id ou title manquant\",\n  \"external_id\": \"{{ $json.external_id || '' }}\",\n  \"title\": \"{{ $json.title || '' }}\",\n  \"validation_errors\": \"external_id manquant ou title manquant\",\n  \"raw_item\": \"{{ JSON.stringify($json) }}\",\n  \"status\": \"failed\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1232,
+        2272
+      ],
+      "id": "eb2f283f-025a-4f88-b259-3e5ab78f8e93",
+      "name": "Set - Linear Issue Validation Error"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (\n  job_id,\n  level,\n  source,\n  error_type,\n  message,\n  details,\n  created_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, NOW());",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.job_id || null,\n  $json.level || \"error\",\n  $json.source || \"linear\",\n  $json.error_type || \"VALIDATION_ERROR\",\n  $json.error_message || \"Erreur de validation Linear\",\n  JSON.stringify({\n    external_id: $json.external_id,\n    title: $json.title,\n    validation_errors: $json.validation_errors,\n    raw_item: $json.raw_item,\n    status: $json.status\n  })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1456,
+        2272
+      ],
+      "id": "51eb98c1-b83d-40fc-8c6d-20e11c0232b5",
+      "name": "Postgres - Insert Linear Audit Log",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://dev.azure.com/{{ $json.client_id }}/_apis/wit/wiql?api-version=7.1",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "SELECT [System.Id], [System.Title], [System.State], [System.AssignedTo], [System.WorkItemType], [Microsoft.VSTS.Common.Priority], [System.CreatedDate], [System.ChangedDate], [System.IterationPath], [System.Tags] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.State] <> 'Closed' AND [System.State] <> 'Done' ORDER BY [System.ChangedDate] DESC"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        112,
+        3244
+      ],
+      "id": "5331c17c-76cb-4ec7-86be-078bffc7952a",
+      "name": "HTTP - Azure DevOps Get Work Items",
+      "onError": "continueErrorOutput",
+      "notes": "Rôle : Récupérer les Work Items Azure pour le client."
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst ids = [];\n\nfor (const item of items) {\n  const workItems = item.json.workItems || [];\n\n  for (const wi of workItems) {\n    if (wi.id) ids.push(wi.id);\n  }\n}\n\nreturn [\n  {\n    json: {\n      ids,\n      ids_csv: ids.join(\",\"),\n      count: ids.length\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        2980
+      ],
+      "id": "ba0e0a42-f179-4c56-8217-d3713b1b1df3",
+      "name": "Code - Extract Azure Work Item IDs",
+      "notes": "Rôle : Transformer le résultat HTTP en IDs utilisables."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f57b1428-b92c-48dc-93fb-4eb93cfe76f3",
+              "leftValue": "={{ $json.external_id !== \"\" && $json.title !== \"\" }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1008,
+        2788
+      ],
+      "id": "0ad40b36-4ac3-4330-9e7e-b5dc00095d9a",
+      "name": "IF - Azure DevOps Work Item Valide ?"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"job_id\": \"{{ $json.job_id || null }}\",\n  \"level\": \"error\",\n  \"source\": \"{{ $json.source || 'azure_devops' }}\",\n  \"error_type\": \"VALIDATION_ERROR\",\n  \"error_message\": \"Work Item Azure DevOps invalide : external_id ou title manquant\",\n  \"external_id\": \"{{ $json.external_id || '' }}\",\n  \"title\": \"{{ $json.title || '' }}\",\n  \"validation_errors\": \"external_id manquant ou title manquant\",\n  \"raw_item\": \"{{ JSON.stringify($json) }}\",\n  \"status\": \"failed\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1232,
+        2872
+      ],
+      "id": "5cb281d4-db73-4716-955d-32db8b5851be",
+      "name": "Set - Azure DevOps Work Item Validation Error"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (\n  job_id,\n  level,\n  source,\n  error_type,\n  message,\n  details,\n  created_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, NOW());",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.job_id || null,\n  $json.level || \"error\",\n  $json.source || \"azure_devops\",\n  $json.error_type || \"VALIDATION_ERROR\",\n  $json.error_message || \"Erreur de validation Azure DevOps Work Item\",\n  JSON.stringify({\n    external_id: $json.external_id,\n    title: $json.title,\n    validation_errors: $json.validation_errors,\n    raw_item: $json.raw_item,\n    status: $json.status\n  })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1456,
+        2872
+      ],
+      "id": "57f5a8d2-52bc-4da4-8ed2-01c6f1f5f263",
+      "name": "Postgres - Insert Azure DevOps Work Item Audit Log",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst risks = items.map(item => item.json);\n\nfunction clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction groupBy(array, field) {\n  const result = {};\n  for (const item of array) {\n    const key = clean(item[field]) || \"Non qualifié\";\n    if (!result[key]) result[key] = [];\n    result[key].push(item);\n  }\n  return result;\n}\n\nconst totalRisks = risks.length;\n\nconst criticalRisks = risks.filter(r => r.risk_level === \"Critique\");\nconst highRisks = risks.filter(r => r.risk_level === \"Élevé\");\nconst mediumRisks = risks.filter(r => r.risk_level === \"Moyen\");\n\nconst prRisks = risks.filter(r =>\n  clean(r.risk_type).toLowerCase().includes(\"validation\") ||\n  clean(r.risk_type).toLowerCase().includes(\"delivery technique\") ||\n  clean(r.pr_blocker_summary)\n);\n\nconst overdueRisks = risks.filter(r =>\n  clean(r.reasons_detected).toLowerCase().includes(\"deadline\")\n);\n\nconst noOwnerRisks = risks.filter(r =>\n  !clean(r.assignee) ||\n  clean(r.reasons_detected).toLowerCase().includes(\"aucun responsable\")\n);\n\nconst risksByAssignee = groupBy(risks, \"assignee\");\nconst risksByType = groupBy(risks, \"risk_type\");\nconst risksBySource = groupBy(risks, \"source\");\n\nconst sprintHealthScore = risks[0]?.sprint_health_score ?? 100;\nconst globalRiskLevel = risks[0]?.global_risk_level ?? \"Faible\";\nconst executiveSummary = risks[0]?.executive_summary ?? \"\";\n\nlet estimatedFailureProbability = 0;\n\nif (sprintHealthScore >= 80) {\n  estimatedFailureProbability = 15;\n} else if (sprintHealthScore >= 60) {\n  estimatedFailureProbability = 35;\n} else if (sprintHealthScore >= 40) {\n  estimatedFailureProbability = 60;\n} else {\n  estimatedFailureProbability = 80;\n}\n\nestimatedFailureProbability += criticalRisks.length * 5;\nestimatedFailureProbability += highRisks.length * 3;\nestimatedFailureProbability += prRisks.length * 2;\n\nif (estimatedFailureProbability > 95) estimatedFailureProbability = 95;\n\nconst topRisks = risks\n  .sort((a, b) => Number(b.risk_score || 0) - Number(a.risk_score || 0))\n  .slice(0, 10);\n\nconst antiFailureContext = {\n  project_context: {\n    sprint_health_score: sprintHealthScore,\n    global_risk_level: globalRiskLevel,\n    estimated_failure_probability: estimatedFailureProbability,\n    executive_summary: executiveSummary\n  },\n\n  risk_summary: {\n    total_risks: totalRisks,\n    critical_risks: criticalRisks.length,\n    high_risks: highRisks.length,\n    medium_risks: mediumRisks.length,\n    pr_risks: prRisks.length,\n    overdue_risks: overdueRisks.length,\n    no_owner_risks: noOwnerRisks.length\n  },\n\n  top_risks: topRisks.map(r => ({\n    alert_key: r.alert_key,\n    source: r.source,\n    type: r.type,\n    external_id: r.external_id,\n    task_id: r.task_id,\n    title: r.title,\n    assignee: r.assignee,\n    priority: r.priority,\n    sprint: r.sprint,\n    risk_score: r.risk_score,\n    risk_level: r.risk_level,\n    risk_type: r.risk_type,\n    reasons_detected: r.reasons_detected,\n    decision_required: r.decision_required,\n    pr_blocker_summary: r.pr_blocker_summary,\n    linked_prs: r.linked_prs,\n    source_url: r.source_url\n  })),\n\n  grouped_insights: {\n    risks_by_assignee: Object.keys(risksByAssignee).map(name => ({\n      assignee: name,\n      count: risksByAssignee[name].length\n    })),\n    risks_by_type: Object.keys(risksByType).map(type => ({\n      risk_type: type,\n      count: risksByType[type].length\n    })),\n    risks_by_source: Object.keys(risksBySource).map(source => ({\n      source,\n      count: risksBySource[source].length\n    }))\n  },\n\n  all_risks: risks,\n\n  built_at: new Date().toISOString()\n};\n\nreturn [\n  {\n    json: antiFailureContext\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2128,
+        1256
+      ],
+      "id": "c28fdbe7-b2ae-4a4e-b449-6f20f0b35705",
+      "name": "Code - Build Anti-Failure Context",
+      "notes": "Transforme la sortie des risques en un objet unique avec :\nproject_context\nrisk_summary\ntop_risks\ngrouped_insights\nServira de contexte pour les agents IA."
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Tu es Guardian of Deadlines, un agent IA spécialisé dans l’anti-échec de sprint logiciel.\n\nTu ne fais pas un simple résumé.\nTu dois prédire le risque d’échec du sprint et recommander des arbitrages opérationnels.\n\nVoici le contexte anti-échec :\n\n{{ JSON.stringify($json, null, 2) }}\n\nTa mission :\n\n1. Estimer le risque d’échec du sprint.\n2. Identifier les causes principales.\n3. Identifier les tâches ou PR qui menacent réellement la livraison.\n4. Proposer des décisions concrètes pour sauver la livraison.\n5. Dire ce qu’il faut déprioriser si nécessaire.\n6. Dire qui doit agir.\n7. Donner une urgence claire.\n\nRègles importantes :\n- Ne recommande jamais une décision vague.\n- Chaque décision doit avoir un owner, une raison et un impact attendu.\n- Ne dis pas seulement “surveiller”.\n- Tu dois transformer les risques en arbitrages.\n- Si une tâche est non critique mais consomme du temps, propose de la sortir du scope.\n- Si une PR bloque une tâche critique, propose une réassignation ou une escalade.\n\nRéponds uniquement en JSON strict.\n\nFormat attendu :\n\n{\n  \"agent\": \"Guardian of Deadlines\",\n  \"sprint_failure_probability\": 0,\n  \"delivery_forecast\": \"\",\n  \"global_risk_level\": \"\",\n  \"main_failure_causes\": [],\n  \"scope_decisions\": [\n    {\n      \"decision\": \"\",\n      \"target\": \"\",\n      \"owner\": \"\",\n      \"reason\": \"\",\n      \"expected_impact\": \"\",\n      \"urgency\": \"\"\n    }\n  ],\n  \"critical_actions\": [\n    {\n      \"action\": \"\",\n      \"owner\": \"\",\n      \"deadline\": \"\",\n      \"reason\": \"\",\n      \"expected_impact\": \"\"\n    }\n  ],\n  \"tasks_to_deprioritize\": [],\n  \"tasks_to_protect\": [],\n  \"confidence_score\": 0,\n  \"critical_decision\": false\n}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        2352,
+        928
+      ],
+      "id": "a99434ce-5ee0-442d-a898-89699dc37024",
+      "name": "AI Agent - Guardian of Deadlines",
+      "notes": "Analyse : blocages, CI échouée, review en attente\nSortie JSON : sprint_failure_probability, critical_actions, tasks_to_deprioritize, tasks_to_protect"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction extractJson(value) {\n  if (typeof value === \"object\") return value;\n\n  if (!value) return null;\n\n  const text = String(value).trim();\n\n  try {\n    return JSON.parse(text);\n  } catch (e) {\n    const match = text.match(/\\{[\\s\\S]*\\}/);\n    if (!match) return null;\n\n    try {\n      return JSON.parse(match[0]);\n    } catch (e2) {\n      return null;\n    }\n  }\n}\n\nconst output = [];\n\nfor (const item of items) {\n  const raw = item.json.output || item.json.text || item.json.response || item.json;\n  const parsed = extractJson(raw);\n\n  if (!parsed) {\n    output.push({\n      json: {\n        guardian_valid: false,\n        agent: \"Guardian of Deadlines\",\n        error_message: \"Sortie Guardian invalide : JSON non parseable\",\n        raw_output: raw,\n        critical_decision: false\n      }\n    });\n    continue;\n  }\n\n  output.push({\n    json: {\n      guardian_valid: true,\n      agent: \"Guardian of Deadlines\",\n      sprint_failure_probability: Number(parsed.sprint_failure_probability || 0),\n      delivery_forecast: parsed.delivery_forecast || \"\",\n      global_risk_level: parsed.global_risk_level || \"\",\n      main_failure_causes: parsed.main_failure_causes || [],\n      scope_decisions: parsed.scope_decisions || [],\n      critical_actions: parsed.critical_actions || [],\n      tasks_to_deprioritize: parsed.tasks_to_deprioritize || [],\n      tasks_to_protect: parsed.tasks_to_protect || [],\n      confidence_score: Number(parsed.confidence_score || 0),\n      critical_decision: parsed.critical_decision === true,\n      guardian_output: parsed\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2768,
+        1032
+      ],
+      "id": "2f4a28d6-f8e2-4d81-98d7-006cf407e68c",
+      "name": "Code - Validate Guardian Output",
+      "notes": "Vérifie guardian_valid et fallback en cas de JSON invalide\nEn cas d’erreur → Set - Guardian AI Error → Postgres - Insert AI Audit Log"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Tu es Friction Killer, un agent IA spécialisé dans la réduction des temps morts de validation technique.\n\nTu analyses les risques liés aux PR, MR, reviews, CI/CD, reviewers absents, PR stagnantes et validations lentes.\n\nTu ne dois jamais dire qu’une PR est “100% correcte”.\nTu peux seulement proposer un niveau de risque de review et une action humaine recommandée.\n\nVoici les données disponibles :\n\n{{ JSON.stringify($json, null, 2) }}\n\nTa mission :\n\n1. Identifier les PR/MR qui bloquent la livraison.\n2. Identifier les reviews trop lentes.\n3. Identifier les PR/MR sans reviewer.\n4. Identifier les CI/CD échouées.\n5. Proposer une action concrète pour accélérer la validation.\n6. Suggérer un label prudent : \"Low Risk Review\", \"Needs Human Review\", \"Blocked Review\", \"CI Failed\".\n7. Dire qui doit agir.\n\nRègles importantes :\n- Ne recommande jamais un merge automatique.\n- Ne dis jamais “Safe to Merge”.\n- Le manager ou lead doit toujours garder la décision finale.\n- Si les données techniques sont insuffisantes, indique “Needs Human Review”.\n- Transforme chaque friction en action.\n\nRéponds uniquement en JSON strict.\n\nFormat attendu :\n\n{\n  \"agent\": \"Friction Killer\",\n  \"friction_level\": \"\",\n  \"blocked_reviews\": [],\n  \"slow_reviews\": [],\n  \"prs_without_reviewer\": [],\n  \"ci_failed_items\": [],\n  \"recommended_review_actions\": [\n    {\n      \"target\": \"\",\n      \"action\": \"\",\n      \"owner\": \"\",\n      \"reason\": \"\",\n      \"suggested_label\": \"\",\n      \"urgency\": \"\"\n    }\n  ],\n  \"review_acceleration_summary\": \"\",\n  \"confidence_score\": 0,\n  \"critical_decision\": false\n}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        2352,
+        1432
+      ],
+      "id": "e83dfbe3-5a98-4a17-9ded-c2c030273bb6",
+      "name": "AI Agent - Friction Killer",
+      "notes": "Analyse PR / MR pour réduire les temps morts\nSortie JSON : friction_level, blocked_reviews, recommended_review_actions"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction extractJson(value) {\n  if (typeof value === \"object\") return value;\n\n  if (!value) return null;\n\n  const text = String(value).trim();\n\n  try {\n    return JSON.parse(text);\n  } catch (e) {\n    const match = text.match(/\\{[\\s\\S]*\\}/);\n    if (!match) return null;\n\n    try {\n      return JSON.parse(match[0]);\n    } catch (e2) {\n      return null;\n    }\n  }\n}\n\nconst output = [];\n\nfor (const item of items) {\n  const raw = item.json.output || item.json.text || item.json.response || item.json;\n  const parsed = extractJson(raw);\n\n  if (!parsed) {\n    output.push({\n      json: {\n        friction_valid: false,\n        agent: \"Friction Killer\",\n        error_message: \"Sortie Friction Killer invalide : JSON non parseable\",\n        raw_output: raw,\n        critical_decision: false\n      }\n    });\n    continue;\n  }\n\n  output.push({\n    json: {\n      friction_valid: true,\n      agent: \"Friction Killer\",\n      friction_level: parsed.friction_level || \"\",\n      blocked_reviews: parsed.blocked_reviews || [],\n      slow_reviews: parsed.slow_reviews || [],\n      prs_without_reviewer: parsed.prs_without_reviewer || [],\n      ci_failed_items: parsed.ci_failed_items || [],\n      recommended_review_actions: parsed.recommended_review_actions || [],\n      review_acceleration_summary: parsed.review_acceleration_summary || \"\",\n      confidence_score: Number(parsed.confidence_score || 0),\n      critical_decision: parsed.critical_decision === true,\n      friction_output: parsed\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2768,
+        1432
+      ],
+      "id": "44ec8bda-b1f5-4bf3-becb-d011ff583ec2",
+      "name": "Code - Validate Friction Output",
+      "notes": "Vérifie friction_valid\nErreurs → Set - Friction AI Error → Postgres - Insert AI Audit Log"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Tu es FlowMind Decision Synthesizer.\n\nTu dois transformer les analyses des agents en une décision claire pour l’équipe projet.\n\nVoici les données disponibles :\n\n{{ JSON.stringify($json, null, 2) }}\n\nTa mission :\n\n1. Produire un résumé exécutif.\n2. Dire si le sprint est en danger.\n3. Identifier les décisions à prendre aujourd’hui.\n4. Identifier les actions de review à accélérer.\n5. Identifier les arbitrages de scope.\n6. Donner un message clair à envoyer dans Slack.\n7. Classer la décision comme critique ou non.\n\nRègles :\n- Pas de généralités.\n- Pas de recommandations vagues.\n- Chaque décision doit avoir un owner, une urgence et un impact.\n- Le ton doit être professionnel.\n- Ne parle pas de dashboard.\n- Ne parle pas de mémoire vectorielle.\n\nRéponds uniquement en JSON strict.\n\nFormat attendu :\n\n{\n  \"final_summary\": \"\",\n  \"global_risk_level\": \"\",\n  \"sprint_failure_probability\": 0,\n  \"critical_decision\": false,\n  \"decisions_today\": [\n    {\n      \"decision\": \"\",\n      \"owner\": \"\",\n      \"deadline\": \"\",\n      \"reason\": \"\",\n      \"expected_impact\": \"\"\n    }\n  ],\n  \"review_actions\": [\n    {\n      \"target\": \"\",\n      \"action\": \"\",\n      \"owner\": \"\",\n      \"urgency\": \"\"\n    }\n  ],\n  \"scope_actions\": [\n    {\n      \"target\": \"\",\n      \"action\": \"\",\n      \"reason\": \"\",\n      \"expected_impact\": \"\"\n    }\n  ],\n  \"slack_message\": \"\",\n  \"confidence_score\": 0\n}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        3504,
+        1408
+      ],
+      "id": "a3c9f883-d7d3-4f41-a381-7cf4e9f54bbd",
+      "name": "AI Agent - Decision Synthesizer",
+      "notes": "Agrège les 3 agents\nProduit final_summary, global_risk_level, sprint_failure_probability, critical_decision, decisions_today, review_actions, scope_actions, slack_message, confidence_score"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction extractJson(value) {\n  if (typeof value === \"object\") return value;\n\n  if (!value) return null;\n\n  const text = String(value).trim();\n\n  try {\n    return JSON.parse(text);\n  } catch (e) {\n    const match = text.match(/\\{[\\s\\S]*\\}/);\n    if (!match) return null;\n\n    try {\n      return JSON.parse(match[0]);\n    } catch (e2) {\n      return null;\n    }\n  }\n}\n\nconst output = [];\n\nfor (const item of items) {\n  const raw = item.json.output || item.json.text || item.json.response || item.json;\n  const parsed = extractJson(raw);\n\n  if (!parsed) {\n    output.push({\n      json: {\n        decision_valid: false,\n        error_message: \"Sortie décisionnelle invalide : JSON non parseable\",\n        final_summary: \"FlowMind a détecté des risques, mais la synthèse IA n’a pas pu être validée.\",\n        global_risk_level: \"À vérifier\",\n        sprint_failure_probability: 0,\n        critical_decision: false,\n        decisions_today: [],\n        review_actions: [],\n        scope_actions: [],\n        slack_message: \"FlowMind a détecté des risques, mais la synthèse IA doit être vérifiée manuellement.\",\n        confidence_score: 0,\n        raw_output: raw\n      }\n    });\n    continue;\n  }\n\n  output.push({\n    json: {\n      decision_valid: true,\n      final_summary: parsed.final_summary || \"\",\n      global_risk_level: parsed.global_risk_level || \"\",\n      sprint_failure_probability: Number(parsed.sprint_failure_probability || 0),\n      critical_decision: parsed.critical_decision === true,\n      decisions_today: parsed.decisions_today || [],\n      review_actions: parsed.review_actions || [],\n      scope_actions: parsed.scope_actions || [],\n      slack_message: parsed.slack_message || \"\",\n      confidence_score: Number(parsed.confidence_score || 0),\n      final_decision_output: parsed,\n      created_at: new Date().toISOString()\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3856,
+        2184
+      ],
+      "id": "1ef95f6e-e3cd-455d-99d7-c833631c5088",
+      "name": "Code - Validate Final Decision Output"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2424,
+        1152
+      ],
+      "id": "51d9e501-23f2-4f9b-b384-0f600d5c2709",
+      "name": "Google Gemini Guardian of Deadlines",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "KFVt0zygfkRrj7fo",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2424,
+        1656
+      ],
+      "id": "7e687b2d-b0dc-45bf-8dea-8685ad383132",
+      "name": "Google Gemini Friction Killer",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "KFVt0zygfkRrj7fo",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        3576,
+        1632
+      ],
+      "id": "aa38b7f8-b270-4cea-b31f-7fa68b5d8b0a",
+      "name": "Google Gemini Decision Synthesizer",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "KFVt0zygfkRrj7fo",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO delivery_risks (\n  alert_key,\n  source,\n  type,\n  external_id,\n  task_id,\n  title,\n  status,\n  assignee,\n  priority,\n  sprint,\n  risk_score,\n  risk_level,\n  risk_type,\n  reasons_detected,\n  decision_required,\n  blocker_type,\n  pr_blocker_summary,\n  linked_pr_count,\n  linked_prs,\n  source_url,\n  sprint_health_score,\n  global_risk_level,\n  total_risks,\n  critical_risks,\n  high_risks,\n  medium_risks,\n  executive_summary,\n  status_alert,\n  detected_at,\n  updated_at,\n  raw_context\n)\nVALUES (\n  $1, $2, $3, $4, $5,\n  $6, $7, $8, $9, $10,\n  $11, $12, $13, $14, $15,\n  $16, $17, $18, $19, $20,\n  $21, $22, $23, $24, $25,\n  $26, $27, $28, $29, NOW(), $30\n)\nON CONFLICT (alert_key)\nDO UPDATE SET\n  risk_score = EXCLUDED.risk_score,\n  risk_level = EXCLUDED.risk_level,\n  risk_type = EXCLUDED.risk_type,\n  reasons_detected = EXCLUDED.reasons_detected,\n  decision_required = EXCLUDED.decision_required,\n  blocker_type = EXCLUDED.blocker_type,\n  pr_blocker_summary = EXCLUDED.pr_blocker_summary,\n  linked_pr_count = EXCLUDED.linked_pr_count,\n  linked_prs = EXCLUDED.linked_prs,\n  sprint_health_score = EXCLUDED.sprint_health_score,\n  global_risk_level = EXCLUDED.global_risk_level,\n  total_risks = EXCLUDED.total_risks,\n  critical_risks = EXCLUDED.critical_risks,\n  high_risks = EXCLUDED.high_risks,\n  medium_risks = EXCLUDED.medium_risks,\n  executive_summary = EXCLUDED.executive_summary,\n  updated_at = NOW(),\n  raw_context = EXCLUDED.raw_context\nRETURNING *;",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.alert_key,\n  $json.source,\n  $json.type,\n  $json.external_id,\n  $json.task_id,\n  $json.title,\n  $json.status,\n  $json.assignee,\n  $json.priority,\n  $json.sprint,\n  $json.risk_score,\n  $json.risk_level,\n  $json.risk_type,\n  $json.reasons_detected,\n  $json.decision_required,\n  $json.blocker_type,\n  $json.pr_blocker_summary,\n  $json.linked_pr_count,\n  JSON.stringify($json.linked_prs || []),\n  $json.source_url,\n  $json.sprint_health_score,\n  $json.global_risk_level,\n  $json.total_risks,\n  $json.critical_risks,\n  $json.high_risks,\n  $json.medium_risks,\n  $json.executive_summary,\n  $json.status_alert || \"Ouverte\",\n  $json.detected_at,\n  JSON.stringify($json.raw_context || {})\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2128,
+        1448
+      ],
+      "id": "4f9d4533-e751-4a71-b062-c88c7c860b78",
+      "name": "Postgres - Upsert Delivery Risks",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO agent_recommendations (\n  agent_name,\n  recommendation_type,\n  global_risk_level,\n  sprint_failure_probability,\n  summary,\n  recommendation,\n  confidence_score,\n  critical_decision,\n  created_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())\nRETURNING *;",
+        "options": {
+          "queryReplacement": "={{ [\n  \"FlowMind Anti-Failure Agents\",\n  \"SPRINT_ANTI_FAILURE\",\n  $json.global_risk_level,\n  $json.sprint_failure_probability,\n  $json.final_summary,\n  JSON.stringify($json.final_decision_output || {}),\n  $json.confidence_score,\n  $json.critical_decision\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4304,
+        2376
+      ],
+      "id": "423a3781-2583-42a9-b629-0737f2f24d22",
+      "name": "Postgres - Insert Agent Recommendations",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO delivery_decisions (\n  decision_title,\n  decision_owner,\n  decision_deadline,\n  decision_reason,\n  expected_impact,\n  global_risk_level,\n  sprint_failure_probability,\n  critical_decision,\n  slack_message,\n  raw_decision,\n  status,\n  created_at,\n  updated_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', NOW(), NOW())\nRETURNING *;",
+        "options": {
+          "queryReplacement": "={{ [\n  ($json.decisions_today && $json.decisions_today[0] && $json.decisions_today[0].decision) || \"Décision delivery à traiter\",\n  ($json.decisions_today && $json.decisions_today[0] && $json.decisions_today[0].owner) || \"PM / Lead Tech\",\n  ($json.decisions_today && $json.decisions_today[0] && $json.decisions_today[0].deadline) || \"Aujourd’hui\",\n  ($json.decisions_today && $json.decisions_today[0] && $json.decisions_today[0].reason) || $json.final_summary,\n  ($json.decisions_today && $json.decisions_today[0] && $json.decisions_today[0].expected_impact) || \"\",\n  $json.global_risk_level,\n  $json.sprint_failure_probability,\n  $json.critical_decision,\n  $json.slack_message,\n  JSON.stringify($json.final_decision_output || {})\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4304,
+        2760
+      ],
+      "id": "d8b5979b-9623-47ec-a6c1-4d5035fe207a",
+      "name": "Postgres - Insert Delivery Decisions",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f54bf558-086c-41a4-9d08-64a633e3fb7c",
+              "leftValue": "={{ $json.critical_decision === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4304,
+        1408
+      ],
+      "id": "21cf733b-4312-493e-9a5e-cc64878a4f12",
+      "name": "IF - Critical Decision ?"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#general",
+          "mode": "name"
+        },
+        "text": "=FlowMind — Rapport anti-échec delivery\nRisque global : {{ $json.global_risk_level }}\nProbabilité d’échec sprint : {{ $json.sprint_failure_probability }}%\nRésumé :\n{{ $json.final_summary }}\nDécisions recommandées :\n{{ JSON.stringify($json.decisions_today, null, 2) }}\nActions de validation :\n{{ JSON.stringify($json.review_actions, null, 2) }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        4752,
+        1792
+      ],
+      "id": "3562be3d-f60e-449d-956a-7c9aee738c99",
+      "name": "Slack - Send Daily Delivery Report",
+      "webhookId": "a045dfb6-16f2-44ac-97f2-e2b5751966dd",
+      "credentials": {
+        "slackApi": {
+          "id": "I9JLfVKIGdJ5G7zO",
+          "name": "Slack account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "rickystephane@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "=FlowMind — Rapport anti-échec delivery\nRisque global : {{ $json.global_risk_level }}\nProbabilité d’échec sprint : {{ $json.sprint_failure_probability }}%\nRésumé :\n{{ $json.final_summary }}\nDécisions recommandées :\n{{ JSON.stringify($json.decisions_today, null, 2) }}\nActions de validation :\n{{ JSON.stringify($json.review_actions, null, 2) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        4752,
+        1600
+      ],
+      "id": "f843cc8c-11e7-441d-96fb-398b0ec33ca2",
+      "name": "Gmail - Send Daily Delivery Report",
+      "webhookId": "de49f999-8ae4-4434-b444-485617dea270"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#general",
+          "mode": "name"
+        },
+        "text": "=FlowMind — Décision critique requise\nRisque global : {{ $json.global_risk_level }}\nProbabilité d’échec sprint : {{ $json.sprint_failure_probability }}%\nRésumé :\n{{ $json.final_summary }}\nDécisions à prendre aujourd’hui :\n{{ JSON.stringify($json.decisions_today, null, 2) }}\nActions review :\n{{ JSON.stringify($json.review_actions, null, 2) }}\nActions scope :\n{{ JSON.stringify($json.scope_actions, null, 2) }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        4752,
+        1408
+      ],
+      "id": "50490585-b633-4182-981d-63d72a09570a",
+      "name": "Slack - Send Critical Decision",
+      "webhookId": "a045dfb6-16f2-44ac-97f2-e2b5751966dd",
+      "credentials": {
+        "slackApi": {
+          "id": "I9JLfVKIGdJ5G7zO",
+          "name": "Slack account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "rickystephane@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "=FlowMind — Décision critique requise\nRisque global : {{ $json.global_risk_level }}\nProbabilité d’échec sprint : {{ $json.sprint_failure_probability }}%\nRésumé :\n{{ $json.final_summary }}\nDécisions à prendre aujourd’hui :\n{{ JSON.stringify($json.decisions_today, null, 2) }}\nActions review :\n{{ JSON.stringify($json.review_actions, null, 2) }}\nActions scope :\n{{ JSON.stringify($json.scope_actions, null, 2) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        4752,
+        1216
+      ],
+      "id": "8c1679a1-dff3-448a-9b5f-a9a31c836ac8",
+      "name": "Gmail - Send Critical Decision",
+      "webhookId": "de49f999-8ae4-4434-b444-485617dea270"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Tu es Knowledge Gap Detector, un agent IA spécialisé dans la détection des manques de connaissance dans un sprint.\n\nTu n’as pas encore accès à une mémoire historique.\nTu ne dois donc pas inventer de solutions passées.\n\nVoici les données disponibles :\n\n{{ JSON.stringify($json, null, 2) }}\n\nTa mission :\n\n1. Identifier les risques qui semblent bloqués par manque de connaissance.\n2. Identifier les tâches sans responsable clair.\n3. Identifier les sujets qui nécessitent un senior.\n4. Identifier les zones où il faut demander de la documentation ou une aide technique.\n5. Proposer une action réaliste pour réduire la dépendance à une seule personne.\n\nRègles :\n- N’invente jamais d’ancien cas similaire.\n- Ne cite pas une documentation inexistante.\n- Si la connaissance manque, dis clairement ce qu’il faut demander ou créer.\n- Propose une action concrète.\n\nRéponds uniquement en JSON strict.\n\nFormat attendu :\n\n{\n  \"agent\": \"Knowledge Gap Detector\",\n  \"knowledge_gap_level\": \"\",\n  \"knowledge_risks\": [],\n  \"senior_needed_topics\": [],\n  \"documentation_needed\": [],\n  \"recommended_knowledge_actions\": [\n    {\n      \"target\": \"\",\n      \"action\": \"\",\n      \"owner\": \"\",\n      \"reason\": \"\",\n      \"urgency\": \"\"\n    }\n  ],\n  \"confidence_score\": 0,\n  \"critical_decision\": false\n}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        2704,
+        1908
+      ],
+      "id": "a088d1cc-995f-4bf5-9b5b-560a4f0b969b",
+      "name": "AI Agent - Knowledge Gap Detector",
+      "notes": "Analyse les gaps de compétence / documentation\nSortie JSON : knowledge_gap_level, recommended_knowledge_actions"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"notification_type\": \"critical_decision\",\n  \"level\": \"critical\",\n  \"subject\": \"FlowMind — Décision critique requise\",\n  \"slack_message\": \"FlowMind — Décision critique requise\\n\\nRisque global : {{ $json.global_risk_level }}\\nProbabilité d’échec sprint : {{ $json.sprint_failure_probability }}%\\n\\nRésumé :\\n{{ $json.final_summary }}\\n\\nDécisions à prendre aujourd’hui :\\n{{ JSON.stringify($json.decisions_today, null, 2) }}\\n\\nActions review :\\n{{ JSON.stringify($json.review_actions, null, 2) }}\\n\\nActions scope :\\n{{ JSON.stringify($json.scope_actions, null, 2) }}\",\n  \"email_message\": \"FlowMind — Décision critique requise\\n\\nRisque global : {{ $json.global_risk_level }}\\nProbabilité d’échec sprint : {{ $json.sprint_failure_probability }}%\\n\\nRésumé :\\n{{ $json.final_summary }}\\n\\nDécisions à prendre aujourd’hui :\\n{{ JSON.stringify($json.decisions_today, null, 2) }}\\n\\nActions review :\\n{{ JSON.stringify($json.review_actions, null, 2) }}\\n\\nActions scope :\\n{{ JSON.stringify($json.scope_actions, null, 2) }}\",\n  \"global_risk_level\": \"{{ $json.global_risk_level }}\",\n  \"sprint_failure_probability\": \"{{ $json.sprint_failure_probability }}\",\n  \"critical_decision\": \"{{ $json.critical_decision }}\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4528,
+        1312
+      ],
+      "id": "7aee64c5-9d2e-4255-b32a-5b3e81d4e244",
+      "name": "Set - Critical Decision Notification"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"notification_type\": \"daily_delivery_report\",\n  \"level\": \"normal\",\n  \"subject\": \"FlowMind — Rapport anti-échec delivery\",\n  \"slack_message\": \"FlowMind — Rapport anti-échec delivery\\n\\nRisque global : {{ $json.global_risk_level }}\\nProbabilité d’échec sprint : {{ $json.sprint_failure_probability }}%\\n\\nRésumé :\\n{{ $json.final_summary }}\\n\\nDécisions recommandées :\\n{{ JSON.stringify($json.decisions_today, null, 2) }}\\n\\nActions de validation :\\n{{ JSON.stringify($json.review_actions, null, 2) }}\",\n  \"email_message\": \"FlowMind — Rapport anti-échec delivery\\n\\nRisque global : {{ $json.global_risk_level }}\\nProbabilité d’échec sprint : {{ $json.sprint_failure_probability }}%\\n\\nRésumé :\\n{{ $json.final_summary }}\\n\\nDécisions recommandées :\\n{{ JSON.stringify($json.decisions_today, null, 2) }}\\n\\nActions de validation :\\n{{ JSON.stringify($json.review_actions, null, 2) }}\",\n  \"global_risk_level\": \"{{ $json.global_risk_level }}\",\n  \"sprint_failure_probability\": \"{{ $json.sprint_failure_probability }}\",\n  \"critical_decision\": \"{{ $json.critical_decision }}\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4528,
+        1696
+      ],
+      "id": "a011870f-d487-4650-942d-9e1ed0e24062",
+      "name": "Set - Daily Delivery Report Notification"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dev.azure.com/TON_ORGANISATION/TON_PROJET/_apis/wit/wiql?api-version=7.1",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "SELECT [System.Id], [System.Title], [System.State], [System.AssignedTo], [System.WorkItemType], [Microsoft.VSTS.Common.Priority], [System.CreatedDate], [System.ChangedDate], [System.IterationPath], [System.Tags] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.State] <> 'Closed' AND [System.State] <> 'Done' ORDER BY [System.ChangedDate] DESC"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        560,
+        2980
+      ],
+      "id": "c7ca611e-0e0e-4da6-80c2-86ddef0ba0a7",
+      "name": "HTTP - Azure DevOps Get Work Item Details",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst normalized = [];\nfor (const item of items) {\n  const workItems = item.json.workItemsDetails || [];\n  for (const wi of workItems) {\n    normalized.push({\n      json: {\n        source: \"azure_devops\",\n        type: \"task\",\n        external_id: wi.id,\n        task_id: wi.id,\n        title: wi.fields[\"System.Title\"],\n        status: wi.fields[\"System.State\"],\n        assignee: wi.fields[\"System.AssignedTo\"]?.displayName || \"\",\n        priority: wi.fields[\"Microsoft.VSTS.Common.Priority\"],\n        sprint: wi.fields[\"System.IterationPath\"],\n        labels: wi.fields[\"System.Tags\"] || [],\n        blocked: false,\n        blocker_type: \"\",\n        source_url: wi.id ? `https://dev.azure.com/ORG/PROJECT/_workitems/edit/${wi.id}` : \"\",\n        normalized_at: new Date().toISOString()\n      }\n    });\n  }\n}\nreturn normalized;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        2788
+      ],
+      "id": "f079ad73-7b56-4e3a-a9ea-df4603893994",
+      "name": "Code - Normalize Azure DevOps Work Items",
+      "notes": "Rôle : Transformer les Work Items récupérés via HTTP en format task."
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2776,
+        2132
+      ],
+      "id": "30796e1c-a63b-4c9e-a732-1b9d4a71dbd9",
+      "name": "Google Gemini Knowledge Gap Detector",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "KFVt0zygfkRrj7fo",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3280,
+        1496
+      ],
+      "id": "a8447a8a-5e77-47eb-ae71-219e953a6538",
+      "name": "Merge - Agent Outputs"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction extractJson(value) {\n  if (typeof value === \"object\") return value;\n\n  if (!value) return null;\n\n  const text = String(value).trim();\n\n  try {\n    return JSON.parse(text);\n  } catch (e) {\n    const match = text.match(/\\{[\\s\\S]*\\}/);\n    if (!match) return null;\n\n    try {\n      return JSON.parse(match[0]);\n    } catch (e2) {\n      return null;\n    }\n  }\n}\n\nconst output = [];\n\nfor (const item of items) {\n  const raw = item.json.output || item.json.text || item.json.response || item.json;\n  const parsed = extractJson(raw);\n\n  if (!parsed) {\n    output.push({\n      json: {\n        guardian_valid: false,\n        agent: \"Guardian of Deadlines\",\n        error_message: \"Sortie Guardian invalide : JSON non parseable\",\n        raw_output: raw,\n        critical_decision: false\n      }\n    });\n    continue;\n  }\n\n  output.push({\n    json: {\n      guardian_valid: true,\n      agent: \"Guardian of Deadlines\",\n      sprint_failure_probability: Number(parsed.sprint_failure_probability || 0),\n      delivery_forecast: parsed.delivery_forecast || \"\",\n      global_risk_level: parsed.global_risk_level || \"\",\n      main_failure_causes: parsed.main_failure_causes || [],\n      scope_decisions: parsed.scope_decisions || [],\n      critical_actions: parsed.critical_actions || [],\n      tasks_to_deprioritize: parsed.tasks_to_deprioritize || [],\n      tasks_to_protect: parsed.tasks_to_protect || [],\n      confidence_score: Number(parsed.confidence_score || 0),\n      critical_decision: parsed.critical_decision === true,\n      guardian_output: parsed\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3056,
+        1908
+      ],
+      "id": "f3fa61b7-0b09-414d-bcae-2789ef28bbd5",
+      "name": "Code - Validate Knowledge Gap Output",
+      "notes": "Vérifie knowledge_gap_valid\nErreurs → Set - Knowledge Gap AI Error → Postgres - Insert AI Audit Log"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f57b1428-b92c-48dc-93fb-4eb93cfe76f3",
+              "leftValue": "={{ $json.guardian_valid === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3056,
+        1032
+      ],
+      "id": "1ad59395-28bb-4822-94c6-95fbb740687f",
+      "name": "IF - Guardian Output Valid ?"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"job_id\": \"{{ $json.job_id || null }}\",\n  \"level\": \"error\",\n  \"source\": \"Guardian of Deadlines\",\n  \"error_type\": \"AI_OUTPUT_VALIDATION\",\n  \"error_message\": \"Sortie Guardian invalide : JSON non parseable ou champs manquants\",\n  \"raw_output\": \"{{ JSON.stringify($json.raw_output) }}\",\n  \"critical_decision\": false,\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3280,
+        692
+      ],
+      "id": "09bfe042-e28b-4314-8971-c1dc9e5ee44c",
+      "name": "Set - Guardian AI Error"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (\n  job_id,\n  level,\n  source,\n  error_type,\n  message,\n  details,\n  created_at\n)\nVALUES ($1,$2,$3,$4,$5,$6,NOW());",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.job_id || null,\n  $json.level || \"error\",\n  $json.source || \"Guardian of Deadlines\",\n  $json.error_type || \"AI_OUTPUT_VALIDATION\",\n  $json.error_message || \"Sortie Guardian invalide\",\n  JSON.stringify({ raw_output: $json.raw_output, critical_decision: $json.critical_decision })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3568,
+        692
+      ],
+      "id": "ae001e66-4d2f-48e4-b99b-5d2aae550b75",
+      "name": "Postgres - Insert AI Audit Log",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f57b1428-b92c-48dc-93fb-4eb93cfe76f3",
+              "leftValue": "={{ $json.friction_valid === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3056,
+        1432
+      ],
+      "id": "a226d53f-083c-4437-83c9-ba13f7a81a44",
+      "name": "IF - Friction Output Valid ?"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"job_id\": \"{{ $json.job_id || null }}\",\n  \"level\": \"error\",\n  \"source\": \"Friction Killer\",\n  \"error_type\": \"AI_OUTPUT_VALIDATION\",\n  \"error_message\": \"Sortie Friction Killer invalide : JSON non parseable ou champs manquants\",\n  \"raw_output\": \"{{ JSON.stringify($json.raw_output) }}\",\n  \"critical_decision\": false,\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3280,
+        1812
+      ],
+      "id": "62798787-7c45-44ec-953b-6d482e9f1040",
+      "name": "Set - Friction AI Error"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f57b1428-b92c-48dc-93fb-4eb93cfe76f3",
+              "leftValue": "={{ $json.decision_valid === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4080,
+        2184
+      ],
+      "id": "ffadee07-200c-4af9-8e25-f94fa4bc8cfe",
+      "name": "IF - Final Decision Output Valid ?"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"job_id\": \"{{ $json.job_id || null }}\",\n  \"level\": \"error\",\n  \"source\": \"Decision Synthesizer\",\n  \"error_type\": \"AI_OUTPUT_VALIDATION\",\n  \"error_message\": \"Sortie Decision Synthesizer invalide : JSON non parseable ou champs manquants\",\n  \"raw_output\": \"{{ JSON.stringify($json.final_decision_output) }}\",\n  \"critical_decision\": false,\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4304,
+        2568
+      ],
+      "id": "5d5a890e-6d63-48a9-bfa0-cd64a131eb4c",
+      "name": "Set - Final Decision AI Error"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (\n  job_id,\n  level,\n  source,\n  error_type,\n  message,\n  details,\n  created_at\n)\nVALUES ($1,$2,$3,$4,$5,$6,NOW());",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.job_id || null,\n  $json.level || \"error\",\n  $json.source || \"Guardian of Deadlines\",\n  $json.error_type || \"AI_OUTPUT_VALIDATION\",\n  $json.error_message || \"Sortie Guardian invalide\",\n  JSON.stringify({ raw_output: $json.raw_output, critical_decision: $json.critical_decision })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4528,
+        2568
+      ],
+      "id": "19fa50f4-ce65-4049-a182-5a4ed78c18d6",
+      "name": "Postgres - Insert AI Audit Log2",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (\n  job_id,\n  level,\n  source,\n  error_type,\n  message,\n  details,\n  created_at\n)\nVALUES ($1,$2,$3,$4,$5,$6,NOW());",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.job_id || null,\n  $json.level || \"error\",\n  $json.source || \"Guardian of Deadlines\",\n  $json.error_type || \"AI_OUTPUT_VALIDATION\",\n  $json.error_message || \"Sortie Guardian invalide\",\n  JSON.stringify({ raw_output: $json.raw_output, critical_decision: $json.critical_decision })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3568,
+        1812
+      ],
+      "id": "46cd6061-2802-46bf-a03c-d8269147642e",
+      "name": "Postgres - Insert AI Audit Log3",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"client_id\": \"client_001\",\n  \"jira_url\": \"https://client001.atlassian.net\",\n  \"jira_token\": \"{{ $json.jira_token }}\",\n  \"github_token\": \"{{ $json.github_token }}\",\n  \"gitlab_token\": \"{{ $json.gitlab_token }}\",\n  \"azure_token\": \"{{ $json.azure_token }}\",\n  \"slack_channel\": \"#general\",\n  \"email_to\": \"pm@client001.com\",\n  \"scoring_thresholds\": {\n    \"critical\": 80,\n    \"high\": 55,\n    \"medium\": 30\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -112,
+        2080
+      ],
+      "id": "d87c5f02-5447-48f7-9611-16e06e777cd7",
+      "name": "Set - Client Context",
+      "notes": "Rôle : Fournir le client_id et credentials dynamiques pour chaque source."
+    },
+    {
+      "parameters": {
+        "content": "## PostgreSQL\n \n## Table 1 : delivery_risks \n## Table 2 : agent_recommendations \n## Table 3 : delivery_decisions\n\nCREATE TABLE IF NOT EXISTS delivery_risks (\n  id SERIAL PRIMARY KEY,\n\n  alert_key TEXT UNIQUE NOT NULL,\n\n  source TEXT,\n  type TEXT,\n  external_id TEXT,\n  task_id TEXT,\n  title TEXT,\n  status TEXT,\n  assignee TEXT,\n  priority TEXT,\n  sprint TEXT,\n\n  risk_score INTEGER,\n  risk_level TEXT,\n  risk_type TEXT,\n  reasons_detected TEXT,\n  decision_required TEXT,\n\n  blocker_type TEXT,\n  pr_blocker_summary TEXT,\n  linked_pr_count INTEGER DEFAULT 0,\n  linked_prs JSONB,\n\n  source_url TEXT,\n\n  sprint_health_score INTEGER,\n  global_risk_level TEXT,\n  total_risks INTEGER,\n  critical_risks INTEGER,\n  high_risks INTEGER,\n  medium_risks INTEGER,\n  executive_summary TEXT,\n\n  status_alert TEXT DEFAULT 'Ouverte',\n\n  detected_at TIMESTAMP,\n  updated_at TIMESTAMP DEFAULT NOW(),\n\n  raw_context JSONB\n);\n\n\nCREATE TABLE IF NOT EXISTS agent_recommendations (\n  id SERIAL PRIMARY KEY,\n\n  agent_name TEXT NOT NULL,\n  recommendation_type TEXT,\n\n  global_risk_level TEXT,\n  sprint_failure_probability INTEGER,\n\n  summary TEXT,\n  recommendation JSONB,\n\n  confidence_score INTEGER,\n  critical_decision BOOLEAN DEFAULT FALSE,\n\n  created_at TIMESTAMP DEFAULT NOW()\n);\n\nCREATE TABLE IF NOT EXISTS delivery_decisions (\n  id SERIAL PRIMARY KEY,\n\n  decision_title TEXT,\n  decision_owner TEXT,\n  decision_deadline TEXT,\n  decision_reason TEXT,\n  expected_impact TEXT,\n\n  global_risk_level TEXT,\n  sprint_failure_probability INTEGER,\n  critical_decision BOOLEAN DEFAULT FALSE,\n\n  slack_message TEXT,\n  raw_decision JSONB,\n\n  status TEXT DEFAULT 'pending',\n\n  created_at TIMESTAMP DEFAULT NOW(),\n  updated_at TIMESTAMP DEFAULT NOW()\n);\n",
+        "height": 1424,
+        "width": 560,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2416,
+        -1424
+      ],
+      "typeVersion": 1,
+      "id": "18a7e2e7-3542-4f92-adf3-a011b8c85ce9",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "operation": "createComment",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "body": "={\n  \"body\": \"⚠️ CI échouée détectée pour cette PR.\\nRésumé des erreurs : {{ $json.pr_blocker_summary }}\\nAction recommandée : vérifier le build avant de merger.\",\n  \"commit_id\": \"{{ $json.pr_id }}\",\n  \"branch\": \"{{ $json.source_branch || 'main' }}\"\n}"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        1904,
+        736
+      ],
+      "id": "afaec2d8-75de-4d0f-a65d-f016dd10e4f7",
+      "name": "GitHub - Comment PR",
+      "webhookId": "3c89e2c4-0277-4b11-b5fa-11a161be83ef"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO delivery_risks (\n  alert_key,\n  source,\n  type,\n  external_id,\n  task_id,\n  title,\n  status,\n  assignee,\n  priority,\n  sprint,\n  risk_score,\n  risk_level,\n  risk_type,\n  reasons_detected,\n  decision_required,\n  blocker_type,\n  pr_blocker_summary,\n  linked_pr_count,\n  linked_prs,\n  source_url,\n  sprint_health_score,\n  global_risk_level,\n  total_risks,\n  critical_risks,\n  high_risks,\n  medium_risks,\n  executive_summary,\n  status_alert,\n  detected_at,\n  updated_at,\n  raw_context\n)\nVALUES (\n  $1, $2, $3, $4, $5,\n  $6, $7, $8, $9, $10,\n  $11, $12, $13, $14, $15,\n  $16, $17, $18, $19, $20,\n  $21, $22, $23, $24, $25,\n  $26, $27, $28, $29, NOW(), $30\n)\nON CONFLICT (alert_key)\nDO UPDATE SET\n  risk_score = EXCLUDED.risk_score,\n  risk_level = EXCLUDED.risk_level,\n  risk_type = EXCLUDED.risk_type,\n  reasons_detected = EXCLUDED.reasons_detected,\n  decision_required = EXCLUDED.decision_required,\n  blocker_type = EXCLUDED.blocker_type,\n  pr_blocker_summary = EXCLUDED.pr_blocker_summary,\n  linked_pr_count = EXCLUDED.linked_pr_count,\n  linked_prs = EXCLUDED.linked_prs,\n  sprint_health_score = EXCLUDED.sprint_health_score,\n  global_risk_level = EXCLUDED.global_risk_level,\n  total_risks = EXCLUDED.total_risks,\n  critical_risks = EXCLUDED.critical_risks,\n  high_risks = EXCLUDED.high_risks,\n  medium_risks = EXCLUDED.medium_risks,\n  executive_summary = EXCLUDED.executive_summary,\n  updated_at = NOW(),\n  raw_context = EXCLUDED.raw_context\nRETURNING *;",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.alert_key,\n  $json.source,\n  $json.type,\n  $json.external_id,\n  $json.task_id,\n  $json.title,\n  $json.status,\n  $json.assignee,\n  $json.priority,\n  $json.sprint,\n  $json.risk_score,\n  $json.risk_level,\n  $json.risk_type,\n  $json.reasons_detected,\n  $json.decision_required,\n  $json.blocker_type,\n  $json.pr_blocker_summary,\n  $json.linked_pr_count,\n  JSON.stringify($json.linked_prs || []),\n  $json.source_url,\n  $json.sprint_health_score,\n  $json.global_risk_level,\n  $json.total_risks,\n  $json.critical_risks,\n  $json.high_risks,\n  $json.medium_risks,\n  $json.executive_summary,\n  $json.status_alert || \"Ouverte\",\n  $json.detected_at,\n  JSON.stringify($json.raw_context || {})\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2128,
+        736
+      ],
+      "id": "a42b42ad-dd0e-4df5-9246-3ba122e6104b",
+      "name": "Postgres - Github Insert Action Log",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "createComment",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "body": "={\n  \"body\": \"⚠️ CI échouée détectée pour cette PR.\\nRésumé des erreurs : {{ $json.pr_blocker_summary }}\\nAction recommandée : vérifier le build avant de merger.\",\n  \"commit_id\": \"{{ $json.pr_id }}\",\n  \"branch\": \"{{ $json.source_branch || 'main' }}\"\n}"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        3856,
+        1992
+      ],
+      "id": "b3b604cc-f689-409d-b0f3-27ece5b6a6fb",
+      "name": "GitHub - Comment PR1",
+      "webhookId": "3c89e2c4-0277-4b11-b5fa-11a161be83ef",
+      "notes": "Decision Synthesizer → filtre sur blocked PR / ci_status = failed."
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "updateFields": {
+          "description": "={\n  \"fields\": {\n    \"assignee\": \"{{ $json.most_available_user }}\"\n  }\n}"
+        }
+      },
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [
+        3856,
+        1800
+      ],
+      "id": "f86cf638-b3f1-426d-8bbf-25ae56d974ca",
+      "name": "Jira - Update Issue / Assign"
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "additionalFields": {
+          "description": "={\n  \"summary\": \"War Room : Sprint critique pour {{ $json.client_id }}\",\n  \"start\": { \"dateTime\": \"{{ new Date().toISOString() }}\" },\n  \"end\": { \"dateTime\": \"{{ new Date(Date.now() + 15*60*1000).toISOString() }}\" },\n  \"attendees\": [\n    { \"email\": \"lead@client.com\" },\n    { \"email\": \"pm@client.com\" }\n  ],\n  \"description\": \"Risque critique détecté. Décisions à arbitrer en urgence.\"\n}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        3856,
+        1224
+      ],
+      "id": "0563311a-0858-4fb6-b18e-07fa0957dada",
+      "name": "Google Calendar - Create Event"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO delivery_risks (\n  alert_key,\n  source,\n  type,\n  external_id,\n  task_id,\n  title,\n  status,\n  assignee,\n  priority,\n  sprint,\n  risk_score,\n  risk_level,\n  risk_type,\n  reasons_detected,\n  decision_required,\n  blocker_type,\n  pr_blocker_summary,\n  linked_pr_count,\n  linked_prs,\n  source_url,\n  sprint_health_score,\n  global_risk_level,\n  total_risks,\n  critical_risks,\n  high_risks,\n  medium_risks,\n  executive_summary,\n  status_alert,\n  detected_at,\n  updated_at,\n  raw_context\n)\nVALUES (\n  $1, $2, $3, $4, $5,\n  $6, $7, $8, $9, $10,\n  $11, $12, $13, $14, $15,\n  $16, $17, $18, $19, $20,\n  $21, $22, $23, $24, $25,\n  $26, $27, $28, $29, NOW(), $30\n)\nON CONFLICT (alert_key)\nDO UPDATE SET\n  risk_score = EXCLUDED.risk_score,\n  risk_level = EXCLUDED.risk_level,\n  risk_type = EXCLUDED.risk_type,\n  reasons_detected = EXCLUDED.reasons_detected,\n  decision_required = EXCLUDED.decision_required,\n  blocker_type = EXCLUDED.blocker_type,\n  pr_blocker_summary = EXCLUDED.pr_blocker_summary,\n  linked_pr_count = EXCLUDED.linked_pr_count,\n  linked_prs = EXCLUDED.linked_prs,\n  sprint_health_score = EXCLUDED.sprint_health_score,\n  global_risk_level = EXCLUDED.global_risk_level,\n  total_risks = EXCLUDED.total_risks,\n  critical_risks = EXCLUDED.critical_risks,\n  high_risks = EXCLUDED.high_risks,\n  medium_risks = EXCLUDED.medium_risks,\n  executive_summary = EXCLUDED.executive_summary,\n  updated_at = NOW(),\n  raw_context = EXCLUDED.raw_context\nRETURNING *;",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.alert_key,\n  $json.source,\n  $json.type,\n  $json.external_id,\n  $json.task_id,\n  $json.title,\n  $json.status,\n  $json.assignee,\n  $json.priority,\n  $json.sprint,\n  $json.risk_score,\n  $json.risk_level,\n  $json.risk_type,\n  $json.reasons_detected,\n  $json.decision_required,\n  $json.blocker_type,\n  $json.pr_blocker_summary,\n  $json.linked_pr_count,\n  JSON.stringify($json.linked_prs || []),\n  $json.source_url,\n  $json.sprint_health_score,\n  $json.global_risk_level,\n  $json.total_risks,\n  $json.critical_risks,\n  $json.high_risks,\n  $json.medium_risks,\n  $json.executive_summary,\n  $json.status_alert || \"Ouverte\",\n  $json.detected_at,\n  JSON.stringify($json.raw_context || {})\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4080,
+        1224
+      ],
+      "id": "820cedbd-b914-42f5-99f8-0597c3543844",
+      "name": "Postgres - Calendar Action Log",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO delivery_risks (\n  alert_key,\n  source,\n  type,\n  external_id,\n  task_id,\n  title,\n  status,\n  assignee,\n  priority,\n  sprint,\n  risk_score,\n  risk_level,\n  risk_type,\n  reasons_detected,\n  decision_required,\n  blocker_type,\n  pr_blocker_summary,\n  linked_pr_count,\n  linked_prs,\n  source_url,\n  sprint_health_score,\n  global_risk_level,\n  total_risks,\n  critical_risks,\n  high_risks,\n  medium_risks,\n  executive_summary,\n  status_alert,\n  detected_at,\n  updated_at,\n  raw_context\n)\nVALUES (\n  $1, $2, $3, $4, $5,\n  $6, $7, $8, $9, $10,\n  $11, $12, $13, $14, $15,\n  $16, $17, $18, $19, $20,\n  $21, $22, $23, $24, $25,\n  $26, $27, $28, $29, NOW(), $30\n)\nON CONFLICT (alert_key)\nDO UPDATE SET\n  risk_score = EXCLUDED.risk_score,\n  risk_level = EXCLUDED.risk_level,\n  risk_type = EXCLUDED.risk_type,\n  reasons_detected = EXCLUDED.reasons_detected,\n  decision_required = EXCLUDED.decision_required,\n  blocker_type = EXCLUDED.blocker_type,\n  pr_blocker_summary = EXCLUDED.pr_blocker_summary,\n  linked_pr_count = EXCLUDED.linked_pr_count,\n  linked_prs = EXCLUDED.linked_prs,\n  sprint_health_score = EXCLUDED.sprint_health_score,\n  global_risk_level = EXCLUDED.global_risk_level,\n  total_risks = EXCLUDED.total_risks,\n  critical_risks = EXCLUDED.critical_risks,\n  high_risks = EXCLUDED.high_risks,\n  medium_risks = EXCLUDED.medium_risks,\n  executive_summary = EXCLUDED.executive_summary,\n  updated_at = NOW(),\n  raw_context = EXCLUDED.raw_context\nRETURNING *;",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.alert_key,\n  $json.source,\n  $json.type,\n  $json.external_id,\n  $json.task_id,\n  $json.title,\n  $json.status,\n  $json.assignee,\n  $json.priority,\n  $json.sprint,\n  $json.risk_score,\n  $json.risk_level,\n  $json.risk_type,\n  $json.reasons_detected,\n  $json.decision_required,\n  $json.blocker_type,\n  $json.pr_blocker_summary,\n  $json.linked_pr_count,\n  JSON.stringify($json.linked_prs || []),\n  $json.source_url,\n  $json.sprint_health_score,\n  $json.global_risk_level,\n  $json.total_risks,\n  $json.critical_risks,\n  $json.high_risks,\n  $json.medium_risks,\n  $json.executive_summary,\n  $json.status_alert || \"Ouverte\",\n  $json.detected_at,\n  JSON.stringify($json.raw_context || {})\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4080,
+        1800
+      ],
+      "id": "c18ca8b2-15d5-4c57-80b3-86620ea096c7",
+      "name": "Postgres - Jira Action Log",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO delivery_risks (\n  alert_key,\n  source,\n  type,\n  external_id,\n  task_id,\n  title,\n  status,\n  assignee,\n  priority,\n  sprint,\n  risk_score,\n  risk_level,\n  risk_type,\n  reasons_detected,\n  decision_required,\n  blocker_type,\n  pr_blocker_summary,\n  linked_pr_count,\n  linked_prs,\n  source_url,\n  sprint_health_score,\n  global_risk_level,\n  total_risks,\n  critical_risks,\n  high_risks,\n  medium_risks,\n  executive_summary,\n  status_alert,\n  detected_at,\n  updated_at,\n  raw_context\n)\nVALUES (\n  $1, $2, $3, $4, $5,\n  $6, $7, $8, $9, $10,\n  $11, $12, $13, $14, $15,\n  $16, $17, $18, $19, $20,\n  $21, $22, $23, $24, $25,\n  $26, $27, $28, $29, NOW(), $30\n)\nON CONFLICT (alert_key)\nDO UPDATE SET\n  risk_score = EXCLUDED.risk_score,\n  risk_level = EXCLUDED.risk_level,\n  risk_type = EXCLUDED.risk_type,\n  reasons_detected = EXCLUDED.reasons_detected,\n  decision_required = EXCLUDED.decision_required,\n  blocker_type = EXCLUDED.blocker_type,\n  pr_blocker_summary = EXCLUDED.pr_blocker_summary,\n  linked_pr_count = EXCLUDED.linked_pr_count,\n  linked_prs = EXCLUDED.linked_prs,\n  sprint_health_score = EXCLUDED.sprint_health_score,\n  global_risk_level = EXCLUDED.global_risk_level,\n  total_risks = EXCLUDED.total_risks,\n  critical_risks = EXCLUDED.critical_risks,\n  high_risks = EXCLUDED.high_risks,\n  medium_risks = EXCLUDED.medium_risks,\n  executive_summary = EXCLUDED.executive_summary,\n  updated_at = NOW(),\n  raw_context = EXCLUDED.raw_context\nRETURNING *;",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.alert_key,\n  $json.source,\n  $json.type,\n  $json.external_id,\n  $json.task_id,\n  $json.title,\n  $json.status,\n  $json.assignee,\n  $json.priority,\n  $json.sprint,\n  $json.risk_score,\n  $json.risk_level,\n  $json.risk_type,\n  $json.reasons_detected,\n  $json.decision_required,\n  $json.blocker_type,\n  $json.pr_blocker_summary,\n  $json.linked_pr_count,\n  JSON.stringify($json.linked_prs || []),\n  $json.source_url,\n  $json.sprint_health_score,\n  $json.global_risk_level,\n  $json.total_risks,\n  $json.critical_risks,\n  $json.high_risks,\n  $json.medium_risks,\n  $json.executive_summary,\n  $json.status_alert || \"Ouverte\",\n  $json.detected_at,\n  JSON.stringify($json.raw_context || {})\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4080,
+        1992
+      ],
+      "id": "6daca82e-7a5c-4a04-bf12-2f2062d79d77",
+      "name": "Postgres - GitHub Action Log",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "rickystephane@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "=@{{ $json.reviewer }} La PR {{ $json.external_id }} nécessite votre review depuis {{ $json.age_hours }} heures. Merci de la traiter rapidement.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        4080,
+        1416
+      ],
+      "id": "3f90b564-3581-4e81-8d32-c7c5d6404d11",
+      "name": "Gmail - Ping Reviewer",
+      "webhookId": "de49f999-8ae4-4434-b444-485617dea270"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#general",
+          "mode": "name"
+        },
+        "text": "=@{{ $json.reviewer }} La PR {{ $json.external_id }} nécessite votre review depuis {{ $json.age_hours }} heures. Merci de la traiter rapidement.",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        4080,
+        1608
+      ],
+      "id": "ee32acec-cda6-4dab-88af-8b250a232ec7",
+      "name": "Slack - Ping Reviewer",
+      "webhookId": "a045dfb6-16f2-44ac-97f2-e2b5751966dd",
+      "credentials": {
+        "slackApi": {
+          "id": "I9JLfVKIGdJ5G7zO",
+          "name": "Slack account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"notification_type\": \"critical_decision\",\n  \"level\": \"critical\",\n  \"subject\": \"FlowMind — Décision critique requise\",\n  \"slack_message\": \"FlowMind — Décision critique requise\\n\\nRisque global : {{ $json.global_risk_level }}\\nProbabilité d’échec sprint : {{ $json.sprint_failure_probability }}%\\n\\nRésumé :\\n{{ $json.final_summary }}\\n\\nDécisions à prendre aujourd’hui :\\n{{ JSON.stringify($json.decisions_today, null, 2) }}\\n\\nActions review :\\n{{ JSON.stringify($json.review_actions, null, 2) }}\\n\\nActions scope :\\n{{ JSON.stringify($json.scope_actions, null, 2) }}\",\n  \"email_message\": \"FlowMind — Décision critique requise\\n\\nRisque global : {{ $json.global_risk_level }}\\nProbabilité d’échec sprint : {{ $json.sprint_failure_probability }}%\\n\\nRésumé :\\n{{ $json.final_summary }}\\n\\nDécisions à prendre aujourd’hui :\\n{{ JSON.stringify($json.decisions_today, null, 2) }}\\n\\nActions review :\\n{{ JSON.stringify($json.review_actions, null, 2) }}\\n\\nActions scope :\\n{{ JSON.stringify($json.scope_actions, null, 2) }}\",\n  \"global_risk_level\": \"{{ $json.global_risk_level }}\",\n  \"sprint_failure_probability\": \"{{ $json.sprint_failure_probability }}\",\n  \"critical_decision\": \"{{ $json.critical_decision }}\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3856,
+        1416
+      ],
+      "id": "d097508d-4f2b-4e92-98bc-298487c7f048",
+      "name": "Set - Critical Decision Notification1",
+      "notes": "Decision Synthesizer → filtre sur prs_without_reviewer ou has_waiting_review = true."
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfor (const item of items) {\n  const data = item.json;\n  let decision_score = 0;\n\n  // PR sans reviewer ou ticket haute priorité\n  if ((data.type === 'pull_request' || data.type === 'merge_request') &&\n      (!data.reviewers || data.reviewers.length === 0) &&\n      data.priority.toLowerCase().includes('haute')) {\n    decision_score = 100; // alerte critique\n  }\n\n  // PR approuvée mais non fusionnée\n  if ((data.type === 'pull_request' || data.type === 'merge_request') &&\n      data.status.toLowerCase() === 'approved' &&\n      !data.merged_at) {\n    decision_score = 50; // rappel simple\n  }\n\n  data.decision_score = decision_score;\n}\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        472
+      ],
+      "id": "e1061d51-0015-4ba4-8479-9f1caed35c62",
+      "name": "Code - Calculate Decision Score",
+      "notes": "Vérifie guardian_valid et fallback en cas de JSON invalide\nEn cas d’erreur → Set - Guardian AI Error → Postgres - Insert AI Audit Log"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ Number($json.decision_score) }}",
+                    "rightValue": 80,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gte"
+                    },
+                    "id": "3a8c5dcc-5b86-46e6-b693-6dd617e0da0a"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "=Branche Critique"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "fe1e9281-bf16-4b1d-a9be-659db18fee94",
+                    "leftValue": "={{ Number($json.decision_score) }}",
+                    "rightValue": 50,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gte"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Branche Suivi / Rappel"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2128,
+        472
+      ],
+      "id": "42d74eb8-0a7e-417a-bd93-c289a67af514",
+      "name": "Switch - Decision Score"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "issueKey": "={{ $json.external_id }}",
+        "updateFields": {
+          "description": "={   \"operation\": \"update\",   \"updateFields\": {     \"description\": \"={\\\"fields\\\": {\\\"status\\\": \\\"Blocked\\\",\\\"assignee\\\": \\\"{{ $json.most_available_user }}\\\"}}\"   } }"
+        }
+      },
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [
+        2416,
+        352
+      ],
+      "id": "d9bb55b2-2c98-4544-bd75-a07e887b4767",
+      "name": "Jira / Azure Update Critical Ticket",
+      "notes": "But : mettre automatiquement le ticket en statut \"Blocked\" et assigner à la personne la plus disponible."
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#general",
+          "mode": "name"
+        },
+        "text": "=@{{ $json.assignee }} La PR {{ $json.external_id }} est critique et bloque la livraison. Merci d’intervenir immédiatement.",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        3056,
+        692
+      ],
+      "id": "b24047bd-053e-43ee-9bef-aa98f87578ea",
+      "name": "Slack - Critical PR Alert",
+      "webhookId": "a045dfb6-16f2-44ac-97f2-e2b5751966dd",
+      "credentials": {
+        "slackApi": {
+          "id": "I9JLfVKIGdJ5G7zO",
+          "name": "Slack account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"notification_type\": \"critical_decision\",\n  \"level\": \"critical\",\n  \"subject\": \"FlowMind — Décision critique requise\",\n  \"slack_message\": \"FlowMind — Décision critique requise\\n\\nRisque global : {{ $json.global_risk_level }}\\nProbabilité d’échec sprint : {{ $json.sprint_failure_probability }}%\\n\\nRésumé :\\n{{ $json.final_summary }}\\n\\nDécisions à prendre aujourd’hui :\\n{{ JSON.stringify($json.decisions_today, null, 2) }}\\n\\nActions review :\\n{{ JSON.stringify($json.review_actions, null, 2) }}\\n\\nActions scope :\\n{{ JSON.stringify($json.scope_actions, null, 2) }}\",\n  \"email_message\": \"FlowMind — Décision critique requise\\n\\nRisque global : {{ $json.global_risk_level }}\\nProbabilité d’échec sprint : {{ $json.sprint_failure_probability }}%\\n\\nRésumé :\\n{{ $json.final_summary }}\\n\\nDécisions à prendre aujourd’hui :\\n{{ JSON.stringify($json.decisions_today, null, 2) }}\\n\\nActions review :\\n{{ JSON.stringify($json.review_actions, null, 2) }}\\n\\nActions scope :\\n{{ JSON.stringify($json.scope_actions, null, 2) }}\",\n  \"global_risk_level\": \"{{ $json.global_risk_level }}\",\n  \"sprint_failure_probability\": \"{{ $json.sprint_failure_probability }}\",\n  \"critical_decision\": \"{{ $json.critical_decision }}\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2768,
+        352
+      ],
+      "id": "214b2cbc-2bd4-4a30-8a3f-ad46650dadb6",
+      "name": "Set - Critical Decision Notification2"
+    },
+    {
+      "parameters": {
+        "sendTo": "rickystephane@gmail.com",
+        "subject": "=PM / Lead Tech",
+        "emailType": "text",
+        "message": "=Destinataire : PM / Lead Tech\nObjet : Action critique requise pour PR {{ $json.external_id }}\nMessage : La PR {{ $json.external_id }} bloque le sprint. Score : {{ $json.decision_score }}.\nAssignee : {{ $json.assignee }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3056,
+        352
+      ],
+      "id": "a97fcb3f-16b8-4678-a0be-1991e43e3a87",
+      "name": "Gmail - Critical PR Alert",
+      "webhookId": "de49f999-8ae4-4434-b444-485617dea270"
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "={{ $json.client_calendar_id }}",
+          "mode": "id"
+        },
+        "additionalFields": {
+          "description": "={\n  \"summary\": \"War Room : Sprint critique pour {{ $json.client_id }}\",\n  \"start\": { \"dateTime\": \"{{ new Date().toISOString() }}\" },\n  \"end\": { \"dateTime\": \"{{ new Date(Date.now() + 15*60*1000).toISOString() }}\" },\n  \"attendees\": [\n    { \"email\": \"lead@client.com\" },\n    { \"email\": \"pm@client.com\" }\n  ],\n  \"description\": \"Risque critique détecté. Décisions à arbitrer en urgence.\"\n}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        3056,
+        160
+      ],
+      "id": "c2a1a654-0fc0-4835-9569-c44de21dcd28",
+      "name": "Google Calendar - War Room"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO action_logs (\n  alert_key, action_type, score, target, owner, outcome, timestamp\n) VALUES ($1,$2,$3,$4,$5,$6,NOW());",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.job_id || null,\n  $json.level || \"error\",\n  $json.source || \"Guardian of Deadlines\",\n  $json.error_type || \"AI_OUTPUT_VALIDATION\",\n  $json.error_message || \"Sortie Guardian invalide\",\n  JSON.stringify({ raw_output: $json.raw_output, critical_decision: $json.critical_decision })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3280,
+        160
+      ],
+      "id": "b650a09b-32d2-44a1-b43f-79dd0b1fbe7a",
+      "name": "Postgres - Insert Critical Action Log",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#general",
+          "mode": "name"
+        },
+        "text": "=@{{ $json.assignee }} PR / MR {{ $json.external_id }} nécessite votre attention. Score de risque modéré : {{ $json.decision_score }}.",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        2416,
+        736
+      ],
+      "id": "ea1d60d6-7597-4c8b-946a-9ba223996248",
+      "name": "Slack - PR Reminder",
+      "webhookId": "a045dfb6-16f2-44ac-97f2-e2b5751966dd",
+      "credentials": {
+        "slackApi": {
+          "id": "I9JLfVKIGdJ5G7zO",
+          "name": "Slack account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "rickystephane@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "=Destinataire : PM / Lead Tech\nObjet : Rappel PR {{ $json.external_id }}\nMessage : PR / MR {{ $json.external_id }} est semi-urgente. Score : {{ $json.decision_score }}.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2416,
+        544
+      ],
+      "id": "70ec3db4-96c6-455e-9660-50584a4dfb91",
+      "name": "Gmail - PR Reminder",
+      "webhookId": "de49f999-8ae4-4434-b444-485617dea270"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO action_logs (\n  alert_key, action_type, score, target, owner, outcome, timestamp\n) VALUES ($1,$2,$3,$4,$5,$6,NOW());",
+        "options": {
+          "queryReplacement": "=[\n  $json.job_id || null,                     // ID du job ou null\n  $json.level || \"error\",                   // Niveau : error, warning, info\n  $json.source || \"jira\",                   // Source : jira, github, gitlab, azure_devops\n  $json.error_type || \"VALIDATION_ERROR\",   // Type d’erreur\n  $json.error_message || \"Erreur de validation Jira\", // Message\n  JSON.stringify({                          // Détails complets\n    external_id: $json.external_id,\n    title: $json.title,\n    validation_errors: $json.validation_errors,\n    raw_item: $json.raw_item,\n    status: $json.status\n  })\n]"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2768,
+        544
+      ],
+      "id": "7c4c38a0-d62a-44c0-919a-e308f287a7a3",
+      "name": "Postgres - Insert Reminder Log",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (\n  job_id,\n  level,\n  source,\n  error_type,\n  message,\n  details,\n  created_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, NOW());",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.job_id || null,\n  $json.level || \"error\",\n  $json.source || \"jira\",\n  $json.error_type || \"VALIDATION_ERROR\",\n  $json.error_message || \"Erreur de validation Jira\",\n  JSON.stringify({\n    external_id: $json.external_id,\n    title: $json.title,\n    validation_errors: $json.validation_errors,\n    raw_item: $json.raw_item,\n    status: $json.status\n  })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1008,
+        868
+      ],
+      "id": "dd624401-3fee-431d-840d-38ea202ea4d5",
+      "name": "Postgres - Insert Jira Audit Log1",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (\n  job_id,\n  level,\n  source,\n  error_type,\n  message,\n  details,\n  created_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, NOW());",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.job_id || null,\n  $json.level || \"error\",\n  $json.source || \"jira\",\n  $json.error_type || \"VALIDATION_ERROR\",\n  $json.error_message || \"Erreur de validation Jira\",\n  JSON.stringify({\n    external_id: $json.external_id,\n    title: $json.title,\n    validation_errors: $json.validation_errors,\n    raw_item: $json.raw_item,\n    status: $json.status\n  })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1008,
+        1924
+      ],
+      "id": "885e9f4d-4f50-4834-8e15-03356b7d7562",
+      "name": "Postgres - Insert Jira Audit Log3",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (\n  job_id,\n  level,\n  source,\n  error_type,\n  message,\n  details,\n  created_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, NOW());",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.job_id || null,\n  $json.level || \"error\",\n  $json.source || \"jira\",\n  $json.error_type || \"VALIDATION_ERROR\",\n  $json.error_message || \"Erreur de validation Jira\",\n  JSON.stringify({\n    external_id: $json.external_id,\n    title: $json.title,\n    validation_errors: $json.validation_errors,\n    raw_item: $json.raw_item,\n    status: $json.status\n  })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1008,
+        2464
+      ],
+      "id": "76502f38-7b9e-4e99-ba6f-b6b4928ac153",
+      "name": "Postgres - Insert Jira Audit Log4",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (\n  job_id,\n  level,\n  source,\n  error_type,\n  message,\n  details,\n  created_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, NOW());",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.job_id || null,\n  $json.level || \"error\",\n  $json.source || \"jira\",\n  $json.error_type || \"VALIDATION_ERROR\",\n  $json.error_message || \"Erreur de validation Jira\",\n  JSON.stringify({\n    external_id: $json.external_id,\n    title: $json.title,\n    validation_errors: $json.validation_errors,\n    raw_item: $json.raw_item,\n    status: $json.status\n  })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        560,
+        3172
+      ],
+      "id": "952ced3f-937c-4637-9574-25ef1961bcac",
+      "name": "Postgres - Insert Jira Audit Log5",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (\n  job_id,\n  level,\n  source,\n  error_type,\n  message,\n  details,\n  created_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, NOW());",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.job_id || null,\n  $json.level || \"error\",\n  $json.source || \"jira\",\n  $json.error_type || \"VALIDATION_ERROR\",\n  $json.error_message || \"Erreur de validation Jira\",\n  JSON.stringify({\n    external_id: $json.external_id,\n    title: $json.title,\n    validation_errors: $json.validation_errors,\n    raw_item: $json.raw_item,\n    status: $json.status\n  })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1008,
+        2980
+      ],
+      "id": "2d083626-1da3-4b6c-b7c7-dcd3fa77db05",
+      "name": "Postgres - Insert Jira Audit Log6",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"source\": \"jira\",\n  \"api_node\": \"Jira - Get Sprint Issues\",\n  \"error_type\": \"API_FAILURE\",\n  \"error_status\": \"{{ $json.statusCode || $json.status || 'unknown' }}\",\n  \"error_message\": \"{{ $json.message || $json.error || JSON.stringify($json) }}\",\n  \"retry_count\": \"{{ Number($json.retry_count || 0) + 1 }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        784,
+        868
+      ],
+      "id": "000a704a-191d-498d-8360-d7c5a650d49f",
+      "name": "Set - Jira API Error"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"job_id\": \"{{ $json.job_id || null }}\",\n  \"client_id\": \"{{ $json.client_id || 'unknown_client' }}\",\n  \"source\": \"github\",\n  \"api_node\": \"GitHub - Get Pull Requests\",\n  \"level\": \"error\",\n  \"error_type\": \"API_FAILURE\",\n  \"error_status\": \"{{ $json.statusCode || $json.status || 'unknown' }}\",\n  \"error_message\": \"{{ $json.message || $json.error || JSON.stringify($json) }}\",\n  \"retry_count\": \"{{ Number($json.retry_count || 0) + 1 }}\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        784,
+        1396
+      ],
+      "id": "c7c45909-0f49-4f4a-b00d-115c0b73973c",
+      "name": "Set - GitHub API Error"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"job_id\": \"{{ $json.job_id || null }}\",\n  \"level\": \"error\",\n  \"source\": \"{{ $json.source || 'jira' }}\",\n  \"error_type\": \"VALIDATION_ERROR\",\n  \"error_message\": \"Issue Jira invalide : external_id ou title manquant\",\n  \"external_id\": \"{{ $json.external_id || '' }}\",\n  \"title\": \"{{ $json.title || '' }}\",\n  \"validation_errors\": \"external_id manquant ou title manquant\",\n  \"raw_item\": \"{{ JSON.stringify($json) }}\",\n  \"status\": \"failed\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        784,
+        1924
+      ],
+      "id": "ab91a236-695d-4324-83a0-1cb36f7be3ca",
+      "name": "Set - GitLab API Error"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"job_id\": \"{{ $json.job_id || null }}\",\n  \"level\": \"error\",\n  \"source\": \"{{ $json.source || 'jira' }}\",\n  \"error_type\": \"VALIDATION_ERROR\",\n  \"error_message\": \"Issue Jira invalide : external_id ou title manquant\",\n  \"external_id\": \"{{ $json.external_id || '' }}\",\n  \"title\": \"{{ $json.title || '' }}\",\n  \"validation_errors\": \"external_id manquant ou title manquant\",\n  \"raw_item\": \"{{ JSON.stringify($json) }}\",\n  \"status\": \"failed\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        784,
+        2464
+      ],
+      "id": "677719b2-d568-4ad4-b18d-1782d54637fa",
+      "name": "Set - Linear API Error"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"job_id\": \"{{ $json.job_id || null }}\",\n  \"level\": \"error\",\n  \"source\": \"{{ $json.source || 'jira' }}\",\n  \"error_type\": \"VALIDATION_ERROR\",\n  \"error_message\": \"Issue Jira invalide : external_id ou title manquant\",\n  \"external_id\": \"{{ $json.external_id || '' }}\",\n  \"title\": \"{{ $json.title || '' }}\",\n  \"validation_errors\": \"external_id manquant ou title manquant\",\n  \"raw_item\": \"{{ JSON.stringify($json) }}\",\n  \"status\": \"failed\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        336,
+        3172
+      ],
+      "id": "7dcfd356-d9da-4e17-bb15-b281f607faa2",
+      "name": "Set - HTTP - Azure DevOps Get Work Items API Error"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"job_id\": \"{{ $json.job_id || null }}\",\n  \"level\": \"error\",\n  \"source\": \"{{ $json.source || 'jira' }}\",\n  \"error_type\": \"VALIDATION_ERROR\",\n  \"error_message\": \"Issue Jira invalide : external_id ou title manquant\",\n  \"external_id\": \"{{ $json.external_id || '' }}\",\n  \"title\": \"{{ $json.title || '' }}\",\n  \"validation_errors\": \"external_id manquant ou title manquant\",\n  \"raw_item\": \"{{ JSON.stringify($json) }}\",\n  \"status\": \"failed\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        784,
+        2980
+      ],
+      "id": "cfc99594-e9ae-4856-915a-4633e1a2010b",
+      "name": "Set - HTTP - Azure DevOps Get Work Items Details API Error"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#general",
+          "mode": "name"
+        },
+        "text": "=FlowMind — Erreur API détectée\n\nSource : {{ $json.source }}\nClient : {{ $json.client_id }}\nNœud : {{ $json.api_node }}\nStatut erreur : {{ $json.error_status }}\nMessage : {{ $json.error_message }}\nTentative : {{ $json.retry_count }}/3\n\nAction requise : vérifier le token, les droits API ou la disponibilité du service.",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1232,
+        868
+      ],
+      "id": "ef04135c-28f9-4425-bb6f-48df534a99ee",
+      "name": "Slack - Notify Ops API Error",
+      "webhookId": "a045dfb6-16f2-44ac-97f2-e2b5751966dd",
+      "credentials": {
+        "slackApi": {
+          "id": "I9JLfVKIGdJ5G7zO",
+          "name": "Slack account 2"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1456,
+        868
+      ],
+      "id": "8a1ecea7-d612-4914-ad0a-0ae084e4f908",
+      "name": "Wait - Retry Delay",
+      "webhookId": "644433d8-8897-4cb1-ac73-0d01e7b09b8c"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (\n  job_id,\n  client_id,\n  level,\n  source,\n  error_type,\n  message,\n  details,\n  created_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, $7, NOW());",
+        "options": {
+          "queryReplacement": "={{\n[\n  $json.job_id || null,\n  $json.client_id || null,\n  $json.level || \"error\",\n  $json.source || \"github\",\n  $json.error_type || \"API_FAILURE\",\n  $json.error_message || \"Erreur API GitHub\",\n  JSON.stringify({\n    api_node: $json.api_node,\n    error_status: $json.error_status,\n    retry_count: $json.retry_count,\n    raw_error: $json\n  })\n]\n}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1008,
+        1396
+      ],
+      "id": "b2e26f49-e749-477d-bfc9-71c9ee5a4ada",
+      "name": "Postgres - Insert API Audit Log",
+      "credentials": {
+        "postgres": {
+          "id": "hOFDtZcMDBz2Idwq",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f57b1428-b92c-48dc-93fb-4eb93cfe76f3",
+              "leftValue": "={{ Number($json.retry_count || 0) < 3 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1680,
+        1540
+      ],
+      "id": "e2f26070-8eb0-403f-9e00-33b710501386",
+      "name": "IF -   GitHub Retry Count < 3 ?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f57b1428-b92c-48dc-93fb-4eb93cfe76f3",
+              "leftValue": "={{ Number($json.retry_count || 0) < 3 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1680,
+        1012
+      ],
+      "id": "70efd0dc-42b6-4bf9-ad55-ea86bdcf6c41",
+      "name": "IF - Jira Retry Count < 3 ?"
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1456,
+        1396
+      ],
+      "id": "28fd3588-27cd-41b1-98d0-abb47273d11f",
+      "name": "Wait - Github Retry Delay",
+      "webhookId": "644433d8-8897-4cb1-ac73-0d01e7b09b8c"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#general",
+          "mode": "name"
+        },
+        "text": "=FlowMind — Erreur API détectée\n\nSource : {{ $json.source }}\nClient : {{ $json.client_id }}\nNœud : {{ $json.api_node }}\nStatut erreur : {{ $json.error_status }}\nMessage : {{ $json.error_message }}\nTentative : {{ $json.retry_count }}/3\n\nAction requise : vérifier le token, les droits API ou la disponibilité du service.",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1232,
+        1396
+      ],
+      "id": "7a385275-7f50-4d43-983c-e18bff84a44b",
+      "name": "Slack - Github Notify Ops API Error",
+      "webhookId": "a045dfb6-16f2-44ac-97f2-e2b5751966dd",
+      "credentials": {
+        "slackApi": {
+          "id": "I9JLfVKIGdJ5G7zO",
+          "name": "Slack account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f57b1428-b92c-48dc-93fb-4eb93cfe76f3",
+              "leftValue": "={{ Number($json.retry_count || 0) < 3 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1680,
+        2068
+      ],
+      "id": "615b441b-4a32-4776-88bf-8c22564b4060",
+      "name": "IF -   GitHub Retry Count < 3 ?1"
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1456,
+        1924
+      ],
+      "id": "5f0409f0-b91e-499f-a5a9-c0dafad3d22e",
+      "name": "Wait - Github Retry Delay1",
+      "webhookId": "644433d8-8897-4cb1-ac73-0d01e7b09b8c"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#general",
+          "mode": "name"
+        },
+        "text": "=FlowMind — Erreur API détectée\n\nSource : {{ $json.source }}\nClient : {{ $json.client_id }}\nNœud : {{ $json.api_node }}\nStatut erreur : {{ $json.error_status }}\nMessage : {{ $json.error_message }}\nTentative : {{ $json.retry_count }}/3\n\nAction requise : vérifier le token, les droits API ou la disponibilité du service.",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1232,
+        1924
+      ],
+      "id": "3843fc8b-7561-4dea-b7e5-59b85142d89d",
+      "name": "Slack - Github Notify Ops API Error1",
+      "webhookId": "a045dfb6-16f2-44ac-97f2-e2b5751966dd",
+      "credentials": {
+        "slackApi": {
+          "id": "I9JLfVKIGdJ5G7zO",
+          "name": "Slack account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f57b1428-b92c-48dc-93fb-4eb93cfe76f3",
+              "leftValue": "={{ Number($json.retry_count || 0) < 3 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1680,
+        2596
+      ],
+      "id": "2cf610da-6cc4-4cfb-8f42-22292deff9ba",
+      "name": "IF -   GitHub Retry Count < 3 ?2"
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1456,
+        2464
+      ],
+      "id": "d29b554c-6ffe-4dbf-ab81-c5fd47de178a",
+      "name": "Wait - Github Retry Delay2",
+      "webhookId": "644433d8-8897-4cb1-ac73-0d01e7b09b8c"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#general",
+          "mode": "name"
+        },
+        "text": "=FlowMind — Erreur API détectée\n\nSource : {{ $json.source }}\nClient : {{ $json.client_id }}\nNœud : {{ $json.api_node }}\nStatut erreur : {{ $json.error_status }}\nMessage : {{ $json.error_message }}\nTentative : {{ $json.retry_count }}/3\n\nAction requise : vérifier le token, les droits API ou la disponibilité du service.",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1232,
+        2464
+      ],
+      "id": "3b1d3faf-648c-4fa7-8c7a-65de8e8f3c77",
+      "name": "Slack - Github Notify Ops API Error2",
+      "webhookId": "a045dfb6-16f2-44ac-97f2-e2b5751966dd",
+      "credentials": {
+        "slackApi": {
+          "id": "I9JLfVKIGdJ5G7zO",
+          "name": "Slack account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f57b1428-b92c-48dc-93fb-4eb93cfe76f3",
+              "leftValue": "={{ Number($json.retry_count || 0) < 3 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1232,
+        3316
+      ],
+      "id": "8b8a0c9d-7859-438f-a10e-a00e26149852",
+      "name": "IF -   GitHub Retry Count < 3 ?3"
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1008,
+        3172
+      ],
+      "id": "633b6cd5-534e-49f3-8045-10c8c042541a",
+      "name": "Wait - Github Retry Delay3",
+      "webhookId": "644433d8-8897-4cb1-ac73-0d01e7b09b8c"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#general",
+          "mode": "name"
+        },
+        "text": "=FlowMind — Erreur API détectée\n\nSource : {{ $json.source }}\nClient : {{ $json.client_id }}\nNœud : {{ $json.api_node }}\nStatut erreur : {{ $json.error_status }}\nMessage : {{ $json.error_message }}\nTentative : {{ $json.retry_count }}/3\n\nAction requise : vérifier le token, les droits API ou la disponibilité du service.",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        784,
+        3172
+      ],
+      "id": "a88406e9-eb06-465e-adb5-ae95290c10df",
+      "name": "Slack - Github Notify Ops API Error3",
+      "webhookId": "a045dfb6-16f2-44ac-97f2-e2b5751966dd",
+      "credentials": {
+        "slackApi": {
+          "id": "I9JLfVKIGdJ5G7zO",
+          "name": "Slack account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set - Client Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Normalize Jira Issues": {
+      "main": [
+        [
+          {
+            "node": "IF - Jira Issue Valide ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Jira Issue Valide ?": {
+      "main": [
+        [
+          {
+            "node": "Merge - Unified Delivery Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set - Jira Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub - Get Pull Requests": {
+      "main": [
+        [
+          {
+            "node": "Code - Normalize GitHub Pull Requests",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set - GitHub API Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitLab - Get Merge Requests": {
+      "main": [
+        [
+          {
+            "node": "Code - Normalize GitLab Merge Requests",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set - GitLab API Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Normalize GitHub Pull Requests": {
+      "main": [
+        [
+          {
+            "node": "IF - GitHub PR Valide ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Normalize GitLab Merge Requests": {
+      "main": [
+        [
+          {
+            "node": "IF - GitLab MR Valide ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Normalize Linear Issues": {
+      "main": [
+        [
+          {
+            "node": "IF - Linear Issue Valide ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - GitHub PR Valide ?": {
+      "main": [
+        [
+          {
+            "node": "Merge - Unified Delivery Data",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Set - GitHub PR Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - GitLab MR Valide ?": {
+      "main": [
+        [
+          {
+            "node": "Merge - Unified Delivery Data",
+            "type": "main",
+            "index": 2
+          }
+        ],
+        [
+          {
+            "node": "Set - GitLab MR Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Linear Issue Valide ?": {
+      "main": [
+        [
+          {
+            "node": "Merge - Unified Delivery Data",
+            "type": "main",
+            "index": 3
+          }
+        ],
+        [
+          {
+            "node": "Set - Linear Issue Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge - Unified Delivery Data": {
+      "main": [
+        [
+          {
+            "node": "Code - Link Tasks With PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Link Tasks With PRs": {
+      "main": [
+        [
+          {
+            "node": "Code - Detect Delivery Risks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Detect Delivery Risks": {
+      "main": [
+        [
+          {
+            "node": "Code - Sprint Health Score",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub - Comment PR",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code - Calculate Decision Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Sprint Health Score": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Anti-Failure Context",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Postgres - Upsert Delivery Risks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Jira Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert Jira Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jira - Get Sprint Issues": {
+      "main": [
+        [
+          {
+            "node": "Code - Normalize Jira Issues",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set - Jira API Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Linear - Get Issues": {
+      "main": [
+        [
+          {
+            "node": "Code - Normalize Linear Issues",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set - Linear API Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - GitHub PR Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert GitHub Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - GitLab MR Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert GitLab Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Linear Issue Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert Linear Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Azure DevOps Get Work Items": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Azure Work Item IDs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set - HTTP - Azure DevOps Get Work Items API Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Azure Work Item IDs": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Azure DevOps Get Work Item Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Azure DevOps Work Item Valide ?": {
+      "main": [
+        [
+          {
+            "node": "Merge - Unified Delivery Data",
+            "type": "main",
+            "index": 4
+          }
+        ],
+        [
+          {
+            "node": "Set - Azure DevOps Work Item Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Azure DevOps Work Item Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert Azure DevOps Work Item Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Anti-Failure Context": {
+      "main": [
+        [
+          {
+            "node": "AI Agent - Guardian of Deadlines",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AI Agent - Friction Killer",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AI Agent - Knowledge Gap Detector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent - Guardian of Deadlines": {
+      "main": [
+        [
+          {
+            "node": "Code - Validate Guardian Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Validate Guardian Output": {
+      "main": [
+        [
+          {
+            "node": "IF - Guardian Output Valid ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent - Friction Killer": {
+      "main": [
+        [
+          {
+            "node": "Code - Validate Friction Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Validate Friction Output": {
+      "main": [
+        [
+          {
+            "node": "IF - Friction Output Valid ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent - Decision Synthesizer": {
+      "main": [
+        [
+          {
+            "node": "Code - Validate Final Decision Output",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub - Comment PR1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Set - Critical Decision Notification1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Jira - Update Issue / Assign",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Google Calendar - Create Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Validate Final Decision Output": {
+      "main": [
+        [
+          {
+            "node": "IF - Final Decision Output Valid ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Guardian of Deadlines": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent - Guardian of Deadlines",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Friction Killer": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent - Friction Killer",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Decision Synthesizer": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent - Decision Synthesizer",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Upsert Delivery Risks": {
+      "main": [
+        []
+      ]
+    },
+    "Postgres - Insert Agent Recommendations": {
+      "main": [
+        []
+      ]
+    },
+    "Postgres - Insert Delivery Decisions": {
+      "main": [
+        []
+      ]
+    },
+    "IF - Critical Decision ?": {
+      "main": [
+        [
+          {
+            "node": "Set - Critical Decision Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set - Daily Delivery Report Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Send Daily Delivery Report": {
+      "main": [
+        []
+      ]
+    },
+    "AI Agent - Knowledge Gap Detector": {
+      "main": [
+        [
+          {
+            "node": "Code - Validate Knowledge Gap Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Critical Decision Notification": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Send Critical Decision",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack - Send Critical Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Daily Delivery Report Notification": {
+      "main": [
+        [
+          {
+            "node": "Slack - Send Daily Delivery Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gmail - Send Daily Delivery Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Azure DevOps Get Work Item Details": {
+      "main": [
+        [
+          {
+            "node": "Code - Normalize Azure DevOps Work Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set - HTTP - Azure DevOps Get Work Items Details API Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Normalize Azure DevOps Work Items": {
+      "main": [
+        [
+          {
+            "node": "IF - Azure DevOps Work Item Valide ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Knowledge Gap Detector": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent - Knowledge Gap Detector",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge - Agent Outputs": {
+      "main": [
+        [
+          {
+            "node": "AI Agent - Decision Synthesizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Validate Knowledge Gap Output": {
+      "main": [
+        [
+          {
+            "node": "Merge - Agent Outputs",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "IF - Guardian Output Valid ?": {
+      "main": [
+        [
+          {
+            "node": "Merge - Agent Outputs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set - Guardian AI Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Guardian AI Error": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert AI Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Friction Output Valid ?": {
+      "main": [
+        [
+          {
+            "node": "Merge - Agent Outputs",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Set - Friction AI Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Friction AI Error": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert AI Audit Log3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Final Decision Output Valid ?": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert Agent Recommendations",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Postgres - Insert Delivery Decisions",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IF - Critical Decision ?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set - Final Decision AI Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Final Decision AI Error": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert AI Audit Log2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Client Context": {
+      "main": [
+        [
+          {
+            "node": "Jira - Get Sprint Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub - Get Pull Requests",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitLab - Get Merge Requests",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Linear - Get Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP - Azure DevOps Get Work Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub - Comment PR": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Github Insert Action Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub - Comment PR1": {
+      "main": [
+        [
+          {
+            "node": "Postgres - GitHub Action Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jira - Update Issue / Assign": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Jira Action Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Calendar - Create Event": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Calendar Action Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Critical Decision Notification1": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Ping Reviewer",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack - Ping Reviewer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Calculate Decision Score": {
+      "main": [
+        [
+          {
+            "node": "Switch - Decision Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch - Decision Score": {
+      "main": [
+        [
+          {
+            "node": "Jira / Azure Update Critical Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack - PR Reminder",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gmail - PR Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jira / Azure Update Critical Ticket": {
+      "main": [
+        [
+          {
+            "node": "Set - Critical Decision Notification2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Critical Decision Notification2": {
+      "main": [
+        [
+          {
+            "node": "Slack - Critical PR Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Google Calendar - War Room",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gmail - Critical PR Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Calendar - War Room": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert Critical Action Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - PR Reminder": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert Reminder Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Jira API Error": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert Jira Audit Log1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - GitHub API Error": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert API Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - GitLab API Error": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert Jira Audit Log3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Linear API Error": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert Jira Audit Log4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - HTTP - Azure DevOps Get Work Items API Error": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert Jira Audit Log5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - HTTP - Azure DevOps Get Work Items Details API Error": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert Jira Audit Log6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Insert Jira Audit Log1": {
+      "main": [
+        [
+          {
+            "node": "Slack - Notify Ops API Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Notify Ops API Error": {
+      "main": [
+        [
+          {
+            "node": "Wait - Retry Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait - Retry Delay": {
+      "main": [
+        [
+          {
+            "node": "IF - Jira Retry Count < 3 ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Insert API Audit Log": {
+      "main": [
+        [
+          {
+            "node": "Slack - Github Notify Ops API Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF -   GitHub Retry Count < 3 ?": {
+      "main": [
+        [
+          {
+            "node": "GitHub - Get Pull Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Jira Retry Count < 3 ?": {
+      "main": [
+        [
+          {
+            "node": "Jira - Get Sprint Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait - Github Retry Delay": {
+      "main": [
+        [
+          {
+            "node": "IF -   GitHub Retry Count < 3 ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Github Notify Ops API Error": {
+      "main": [
+        [
+          {
+            "node": "Wait - Github Retry Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait - Github Retry Delay1": {
+      "main": [
+        [
+          {
+            "node": "IF -   GitHub Retry Count < 3 ?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Github Notify Ops API Error1": {
+      "main": [
+        [
+          {
+            "node": "Wait - Github Retry Delay1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF -   GitHub Retry Count < 3 ?1": {
+      "main": [
+        [
+          {
+            "node": "GitLab - Get Merge Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Insert Jira Audit Log3": {
+      "main": [
+        [
+          {
+            "node": "Slack - Github Notify Ops API Error1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait - Github Retry Delay2": {
+      "main": [
+        [
+          {
+            "node": "IF -   GitHub Retry Count < 3 ?2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Github Notify Ops API Error2": {
+      "main": [
+        [
+          {
+            "node": "Wait - Github Retry Delay2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Insert Jira Audit Log4": {
+      "main": [
+        [
+          {
+            "node": "Slack - Github Notify Ops API Error2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF -   GitHub Retry Count < 3 ?2": {
+      "main": [
+        [
+          {
+            "node": "Linear - Get Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait - Github Retry Delay3": {
+      "main": [
+        [
+          {
+            "node": "IF -   GitHub Retry Count < 3 ?3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Github Notify Ops API Error3": {
+      "main": [
+        [
+          {
+            "node": "Wait - Github Retry Delay3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Insert Jira Audit Log5": {
+      "main": [
+        [
+          {
+            "node": "Slack - Github Notify Ops API Error3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF -   GitHub Retry Count < 3 ?3": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Azure DevOps Get Work Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "d0b4e1c9-cef9-4610-a69d-f74ea5e24ef2",
+  "meta": {
+    "templateId": "rag-starter-template",
+    "templateCredsSetupCompleted": true,
+    "instanceId": "08a5a7ca1053f8e73004eb8a4a70aa60f597d80f00d24abfe1fd3a3c4d28486d"
+  },
+  "id": "XuVnN5uR5EUrYAqf",
+  "tags": []
+}
